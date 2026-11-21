@@ -157,6 +157,20 @@ def test_a_case_is_not_reworked_while_the_supplier_still_has_time_to_answer(conn
     assert not awaiting_reply(conn, "CMP-GAM-008", NOW + timedelta(minutes=45))
 
 
+def test_a_round_to_several_suppliers_is_worked_once_not_once_per_answer(conn):
+    def mail(n, contact, direction, minutes):
+        conn.execute("INSERT INTO messages (case_key, direction, status, counterpart_email, gmail_id, sent_at, created_at) "
+                     "VALUES (?, ?, 'x', ?, ?, ?, 't')", (CASE, direction, contact, f"g{n}", (NOW + timedelta(minutes=minutes)).isoformat()))
+
+    mail(1, "kim@suppliers.example", "out", 0)
+    mail(2, "ortiz@suppliers.example", "out", 0)
+    mail(3, "ortiz@suppliers.example", "in", 4)
+    assert awaiting_reply(conn, "CMP-GAM-008", NOW + timedelta(minutes=5))       # the other may still answer
+    assert not awaiting_reply(conn, "CMP-GAM-008", NOW + timedelta(minutes=12))  # grace over: work with what we have
+    mail(4, "kim@suppliers.example", "in", 13)
+    assert not awaiting_reply(conn, "CMP-GAM-008", NOW + timedelta(minutes=13))
+
+
 def brief(gap, need=18900, short=5900, mail=()):
     return {"findings": [{"title": "Receipt books 80,000, note says 8,000"}], "correspondence_so_far": list(mail),
             "lines_using_this_part": [{"product_id": "CE", "copies_short_if_nobody_acts": short, "stopped_by": "CMP-GAM-008"}],

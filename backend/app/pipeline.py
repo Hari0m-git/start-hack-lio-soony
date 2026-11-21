@@ -27,6 +27,7 @@ from app.truth import assess
 log = logging.getLogger(__name__)
 CASE_WORKERS = 4
 WAIT = timedelta(minutes=30)       # how long a supplier gets to answer before the case is looked at again
+GRACE = timedelta(minutes=10)      # how long the slower suppliers get once the first one has answered
 MAX_FAILURES = 2                   # attempts on the same facts before a person takes over
 DAILY_BUDGET_USD = float(os.environ.get("DAILY_BUDGET_USD", "25"))
 failures: dict[str, int] = {}
@@ -44,13 +45,18 @@ def parts_at_risk(assessment, forecast: dict) -> list[str]:
 
 
 def awaiting_reply(conn: sqlite3.Connection, material_id: str, now: datetime) -> bool:
-    """We wrote and the supplier has had less than WAIT to answer. Working the case now would only cost money."""
-    last = conn.execute("SELECT direction, sent_at FROM messages WHERE case_key = ? AND gmail_id IS NOT NULL ORDER BY id DESC",
-                        (f"part:{material_id}",)).fetchone()
-    if not last or last["direction"] != "out":
+    """Working a case costs money, so it waits while answers are still due: up to WAIT when nobody has answered,
+    and a short GRACE for the others once the first of several suppliers has, so one round is worked once."""
+    last = {}  # per contact: the latest message
+    for m in conn.execute("SELECT counterpart_email, direction, sent_at FROM messages WHERE case_key = ? "
+                          "AND gmail_id IS NOT NULL ORDER BY id", (f"part:{material_id}",)):
+        last[m["counterpart_email"]] = m
+    ages = [now.astimezone(timezone.utc) - sent for m in last.values()
+            if m["direction"] == "out" and (sent := parse_when(m["sent_at"]))]
+    if not ages:
         return False
-    sent = parse_when(last["sent_at"])
-    return bool(sent) and now.astimezone(timezone.utc) - sent < WAIT
+    everyone_silent = len(ages) == len(last)
+    return min(ages) < (WAIT if everyone_silent else GRACE)
 
 
 def due_cases(conn: sqlite3.Connection, now: datetime) -> dict[str, str]:
