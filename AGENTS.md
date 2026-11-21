@@ -22,3 +22,13 @@ START Hack Munich 2026, Lio challenge. Submission deadline: Sunday 22 Nov 2026, 
 - After changing dependencies, regenerate: `uv export --no-dev --no-hashes --no-emit-project -o requirements.txt`
 - Free tier limits that shape the design: the disk is wiped on every restart, the service stops after
   15 idle minutes (hence the self-ping), and outbound SMTP ports 25/465/587 are blocked.
+
+## Reading files (run from `backend/`)
+- `uv run python -m app.ingest` reads file versions not read yet; `--all` reads everything again.
+- CSVs are mapped onto the vocabulary in `app/entities.py` by a model, then validated and applied by code
+  (`app/tabular.py`). Check `ingest_log` for files marked `needs_review`.
+- Mailbox sign-in (once, opens a browser): `uv run python -m app.gmail_auth`
+
+## Tooling gotcha
+- Shell heredocs in the agent tool collapse double backslashes and cut off after roughly 10k characters.
+  Write larger files, and anything containing backslash escapes, with the file tool.

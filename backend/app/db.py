@@ -31,6 +31,32 @@ CREATE TABLE IF NOT EXISTS file_events (
     processed_at TEXT
 );
 CREATE INDEX IF NOT EXISTS file_events_unprocessed ON file_events (processed_at, id);
+CREATE TABLE IF NOT EXISTS mappings (
+    signature TEXT PRIMARY KEY,
+    example_path TEXT NOT NULL,
+    mapping TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    source_sha256 TEXT NOT NULL,
+    row_no INTEGER NOT NULL,
+    data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS records_entity ON records (entity);
+CREATE INDEX IF NOT EXISTS records_source ON records (source_path);
+CREATE TABLE IF NOT EXISTS ingest_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    path TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('ok', 'needs_review', 'failed')),
+    entity TEXT,
+    rows INTEGER NOT NULL DEFAULT 0,
+    detail TEXT
+);
 """
 
 
