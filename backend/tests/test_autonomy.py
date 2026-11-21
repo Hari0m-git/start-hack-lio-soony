@@ -58,9 +58,26 @@ def test_a_message_without_a_label_is_treated_as_a_commitment(conn):
 
 def test_the_independent_check_can_stop_what_the_agent_called_harmless(conn):
     case(conn, INQUIRY)
-    box = FakeMailbox()
-    send_what_is_safe(conn, box, NOW, lambda s, b: {"commits": True, "reason": "it accepts the offer"})
+    box, asked = FakeMailbox(), []
+
+    def strict(subject, body):
+        asked.append(subject)
+        return {"commits": True, "reason": "it accepts the offer"}
+
+    send_what_is_safe(conn, box, NOW, strict)
+    send_what_is_safe(conn, box, NOW + timedelta(hours=1), strict)
     assert box.sent == [] and "it accepts the offer" in held(conn)["Pytanie"]
+    assert asked == ["Pytanie"]  # the verdict on an unchanged text is not bought twice
+
+
+def test_only_files_count_as_evidence_and_an_invented_file_is_reported():
+    from app.agent import check_decision
+
+    decision = {"options": [{"title": "t", "evidence": ["soony/erp/stock.csv", "Supplier email, 18:05"]}], "recommended_option": 0,
+                "evidence": ["soony/erp/stock.csv", "Supplier email from Agnieszka Nowak", "soony/erp/invented.csv"], "actions": []}
+    problems = check_decision(decision, {"soony/erp/stock.csv"}, set())
+    assert problems == ["cites files that do not exist: soony/erp/invented.csv"]
+    assert decision["options"][0]["evidence"] == ["soony/erp/stock.csv"]
 
 
 def test_a_check_that_breaks_never_defaults_to_sending(conn):

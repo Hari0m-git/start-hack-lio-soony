@@ -56,7 +56,10 @@ money or terms and waits for the approver you named. Never mix the two: if you n
 write two messages.
 - Hand the case to a person when you cannot responsibly take it further: no route is left that reaches the dock \
 in time, the facts contradict each other, the supplier declined and nothing else is evidenced, or the choice is a \
-judgement only the customer can make. Say in one sentence why, and what the person has to decide.
+judgement only the customer can make. Say in one sentence why, and what the person has to decide. Handing over \
+stops everything on the case, so do not hand over while there is still a question you can put to a supplier or \
+an answer you are waiting for; an approval that a person has to give is not a handover either, it is the normal \
+path.
 
 Finish by calling submit_decision."""
 
@@ -236,7 +239,11 @@ def check_decision(decision: dict, known_paths: set[str], contacts: set[str]) ->
     elif not 0 <= int(decision.get("recommended_option", -1)) < len(options):
         problems.append("recommended option does not exist")
         decision["recommended_option"] = 0
-    cited = set(decision.get("evidence") or []) | {p for o in options for p in o.get("evidence") or []}
+    # Evidence means files. Anything else the agent lists (a mail, a tool result) is shown elsewhere and dropped
+    # here; something that looks like a file path but does not exist is an invented source and is reported.
+    for holder in (decision, *options):
+        holder["evidence"] = [p for p in holder.get("evidence") or [] if p in known_paths or "/" in p]
+    cited = set(decision["evidence"]) | {p for o in options for p in o["evidence"]}
     unknown = sorted(p for p in cited if p not in known_paths)
     if unknown:
         problems.append(f"cites files that do not exist: {', '.join(unknown)}")

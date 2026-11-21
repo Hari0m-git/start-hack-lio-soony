@@ -22,6 +22,7 @@ log = logging.getLogger(__name__)
 
 MAX_AUTOMATIC_PER_CONTACT = 3      # after this many unattended mails to one contact in a case, a person looks
 COOL_DOWN = timedelta(minutes=20)  # do not write again while the last mail is this fresh and unanswered
+SECOND_OPINION = "An independent check read it as a commitment:"
 
 CHECK_SCHEMA = {
     "type": "object", "required": ["commits", "reason"],
@@ -76,9 +77,11 @@ def hold_reason(conn: sqlite3.Connection, message: sqlite3.Row, now: datetime,
         sent = parse_when(history[-1]["sent_at"])
         if not sent or now.astimezone(timezone.utc) - sent < COOL_DOWN:
             return "The last message to this contact is recent and unanswered."
+    if (message["held_because"] or "").startswith(SECOND_OPINION):
+        return message["held_because"]  # the text has not changed, so the verdict stands; do not pay for it again
     verdict = checker(message["subject"] or "", message["body_english"] or message["body"] or "")
     if verdict.get("commits"):
-        return f"An independent check read it as a commitment: {verdict.get('reason')}"
+        return f"{SECOND_OPINION} {verdict.get('reason')}"
     return None
 
 
