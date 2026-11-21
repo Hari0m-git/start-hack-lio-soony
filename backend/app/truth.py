@@ -13,6 +13,8 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta
 
+from app.documents import parse_quantity
+
 STALE_HOURS = 24
 MIN_PREFIX = 8
 _REV = re.compile(r"(?i)\brev(?:ision)?\.?\s*([A-Z0-9]{1,2})\b")
@@ -183,6 +185,12 @@ def assess(conn: sqlite3.Connection, today: date | None = None) -> Assessment:
     batches = {str(s.get("batch") or f"{s['material_id']}/none"): Batch(
         s["material_id"], str(s.get("batch") or ""), _num(s.get("quantity")), _num(s.get("quantity"))) for s in f.stock}
 
+    snapshot = _day(f.snapshot_date)
+    for g in f.receipts:  # received after the snapshot: on site, although the snapshot does not show it yet
+        if snapshot and (_day(g.get("gr_date")) or date.min) > snapshot and str(g["gr_number"]) not in batches:
+            batches[str(g["gr_number"])] = Batch(g["material_id"], str(g["gr_number"]), _num(g.get("qty_received")),
+                                                 _num(g.get("qty_received")))
+
     # 1. Receipts booked with a different quantity than the delivery note states.
     booked, paper, scans = defaultdict(list), defaultdict(float), defaultdict(set)
     for g in f.receipts:
@@ -216,6 +224,27 @@ def assess(conn: sqlite3.Connection, today: date | None = None) -> Assessment:
             units=int(delta if batch else 0),
             evidence=[_evidence(p, "delivery note") for p in sorted(scans[key])] + [_evidence(culprit["_source"], f"goods receipt {culprit['gr_number']}")],
             data={"batch": str(culprit["gr_number"]), "booked": total, "paper": paper[key], "ordered": _num(culprit.get("qty_ordered"))},
+        ))
+
+    # 1b. Receipts whose remark says part of the delivery is a different material.
+    for g in f.receipts:
+        remark, batch = str(g.get("remark") or ""), batches.get(str(g["gr_number"]))
+        others = [cid for cid in f.components if cid != g["material_id"] and cid in remark]
+        if not others or not batch:
+            continue
+        stated = re.search("([0-9][0-9., ]*) *(pcs|pieces|pc|szt|stk)", remark, re.IGNORECASE)
+        wrong = parse_quantity(stated.group(1).strip()) if stated else None
+        if wrong:
+            batch.usable_qty = max(0, batch.usable_qty - wrong)
+            batch.reasons.append(f"{wrong:,.0f} pieces are {others[0]}, not {g['material_id']}")
+        findings.append(Finding(
+            key=f"wrong_material:{g['gr_number']}", kind="wrong_material", material_id=g["material_id"],
+            title=(f"{wrong:,.0f} pieces booked as {g['material_id']} are really {others[0]}" if wrong
+                   else f"Part of goods receipt {g['gr_number']} booked as {g['material_id']} is really {others[0]}"),
+            detail=f"Receiving noted on goods receipt {g['gr_number']}: '{remark}'. The wrong pieces have to be set aside "
+                   "so they are not packed, and the supplier owes a correction.",
+            units=int(wrong or 0), needs_action=True, evidence=[_evidence(g["_source"], f"goods receipt {g['gr_number']}")],
+            data={"batch": str(g["gr_number"]), "really": others[0]},
         ))
 
     # 2. Lots a document puts on hold while the ERP shows them as free stock.
@@ -265,6 +294,39 @@ def assess(conn: sqlite3.Connection, today: date | None = None) -> Assessment:
                 title=f"Revision of {batch.usable_qty:,.0f} pieces of {batch.material_id} is not documented",
                 detail=f"Only revision {rev_needed} may be packed; for batch {batch.batch} {basis}.",
                 needs_action=True, evidence=[rule, *proof], data={"batch": batch.batch, "required": rev_needed},
+            ))
+
+    # 3b. Stock received from a supplier after its conditional release ran out.
+    doc_facts = load(conn, "doc_fact")
+    limit = next((int(m.group(1)) for x in doc_facts if x.get("doc_type") == "policy"
+                  and "conditional" in str(x.get("statement")).lower()
+                  and (m := re.search("([0-9]+) days", str(x.get("statement"))))), None)
+    for sup in load(conn, "supplier"):
+        if str(sup.get("qualification_status") or "").lower() != "conditional":
+            continue
+        expiry = basis = None
+        for x in doc_facts:  # the supplier's own file may state the date outright
+            said = re.search("until ([0-9]{4}-[0-9]{2}-[0-9]{2})", str(x.get("statement")))
+            if x.get("supplier_id") == sup["supplier_id"] and said and "qualif" in str(x.get("statement")).lower():
+                expiry, basis, source = _day(said.group(1)), "stated in the supplier's file", x["_source"]
+        if not expiry and limit and _day(sup.get("supplier_since")):
+            expiry, source = _day(sup["supplier_since"]) + timedelta(days=limit), sup["_source"]
+            basis = f"{limit} days after the release on {sup['supplier_since']}, as the approval policy allows"
+        if not expiry or expiry >= today:
+            continue
+        late = defaultdict(float)
+        for b in batches.values():
+            g = f.receipt_by_number.get(b.batch, {})
+            if g.get("supplier_id") == sup["supplier_id"] and (_day(g.get("gr_date")) or date.min) > expiry:
+                late[b.material_id] += b.erp_qty
+        for material, qty in late.items():
+            findings.append(Finding(
+                key=f"qualification_expired:{sup['supplier_id']}:{material}", kind="qualification_expired", material_id=material,
+                title=f"{qty:,.0f} pieces of {material} came from {sup.get('name')} after its conditional release expired on {expiry.isoformat()}",
+                detail=f"The release ended on {expiry.isoformat()} ({basis}). Goods received after that date need the release "
+                       "extended, or an exception, before they are packed.",
+                units=int(qty), needs_action=True, evidence=[_evidence(source, "supplier qualification")],
+                data={"supplier_id": sup["supplier_id"], "expired": expiry.isoformat()},
             ))
 
     # 4. Inbound shipments: what will really be on the dock, and when.

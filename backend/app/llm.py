@@ -14,7 +14,7 @@ from app import config  # noqa: F401  (loads .env before the settings below are 
 log = logging.getLogger(__name__)
 
 DEFAULT_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.4-mini")  # reading: many small calls
-AGENT_MODEL = os.environ.get("OPENAI_AGENT_MODEL", "gpt-5.5")   # deciding: few calls that must be right
+AGENT_MODEL = os.environ.get("OPENAI_AGENT_MODEL", "gpt-5.4")   # deciding: few calls that must be right
 
 # USD per million tokens (input, cached input, output), from OpenAI's pricing page on 2026-11-21.
 PRICES = {

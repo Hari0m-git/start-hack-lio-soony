@@ -249,6 +249,25 @@ def test_a_newer_count_moves_the_forecast_forward_and_received_goods_are_not_cou
     assert next(c for c in f["components"] if c["material_id"] == "A")["inbound_counted"] == 0
 
 
+def test_pieces_of_another_material_in_a_receipt_are_not_usable(conn):
+    conn.execute("UPDATE records SET data = json_set(data, '$.remark', '1 pallet holds A (40 pcs); booked per delivery note') "
+                 "WHERE entity = 'goods_receipt' AND json_extract(data, '$.gr_number') = '104'")
+    a = assess(conn, TODAY)
+    f = by_kind(a)["wrong_material"]
+    assert (f.material_id, f.units, f.needs_action, f.data["really"], usable(a)["104"]) == ("C", 40, True, "A", 260)
+
+
+def test_stock_received_after_a_conditional_release_ran_out_is_flagged(conn):
+    put(conn, "supplier", "suppliers/S2_x/profile.csv",
+        {"supplier_id": "S2", "name": "Second Source", "qualification_status": "conditional", "supplier_since": "2026-08-01"})
+    put(conn, "doc_fact", "policy.pdf", {"doc_type": "policy", "statement": "Conditional releases are limited to 90 days from the date of release."})
+    conn.execute("UPDATE records SET data = json_set(data, '$.gr_date', '2026-11-17') WHERE entity = 'goods_receipt' "
+                 "AND json_extract(data, '$.gr_number') = '103'")
+    f = by_kind(assess(conn, TODAY))["qualification_expired"]
+    assert (f.material_id, f.units, f.data["expired"], f.needs_action) == ("C", 500, "2026-10-30", True)
+    assert "qualification_expired" not in by_kind(assess(conn, date(2026, 10, 1)))
+
+
 def test_forecast_says_what_is_missing_when_documents_are_missing(conn):
     conn.execute("DELETE FROM records WHERE entity = 'doc_shift'")
     assert simulate(conn, assess(conn, TODAY))["ready"] is False
