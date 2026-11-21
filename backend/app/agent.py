@@ -296,7 +296,7 @@ def basis_of(brief: dict) -> str:
     material = {
         "findings": sorted(f["title"] for f in brief["findings"]),
         "mail": [(m["direction"], m["at"], m["subject"]) for m in brief["correspondence_so_far"]
-                 if not m["direction"].startswith("automatic")],
+                 if not m["direction"].startswith(("automatic", "sent from our mailbox by something other"))],
         "lines": [(l["product_id"], l["copies_short_if_nobody_acts"] > 0, l["stopped_by"]) for l in brief["lines_using_this_part"]],
         "gap_in_tenths_of_need": round(10 * (part.get("gap") or 0) / max(1, part.get("need") or 1)),
         "confirmed": bool(part.get("confirmed_by_supplier")),
