@@ -143,7 +143,9 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
     if db_path != ":memory:":
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     # The background loop and the API write at the same time: wait for the other writer instead of failing.
-    conn = sqlite3.connect(db_path, timeout=30)
+    # A request may open its connection on one worker thread and close it on another; each connection is still
+    # only ever used by one piece of work at a time.
+    conn = sqlite3.connect(db_path, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     if db_path != ":memory:":
         conn.execute("PRAGMA journal_mode=WAL")

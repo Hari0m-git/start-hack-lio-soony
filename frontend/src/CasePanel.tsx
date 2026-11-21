@@ -264,10 +264,16 @@ export function CasePanel({
             </div>
           )}
 
-          {item.card?.your_step && !item.needs_human && (
+          {!item.needs_human && (
             <div className="rounded-lg border border-line bg-card px-4 py-3 text-[15px]">
               <span className="font-semibold">Your step: </span>
-              {item.card.your_step}
+              {item.state === "needs_approval"
+                ? (item.card?.your_step ?? "Review the message below and approve it.")
+                : item.state === "waiting_for_supplier"
+                  ? "Nothing right now. The agent is waiting for the supplier's answer and will bring it to you."
+                  : item.state === "supplier_answered"
+                    ? "Nothing right now. The supplier has answered and the agent is working out the next step."
+                    : (item.card?.your_step ?? "Nothing right now.")}
             </div>
           )}
 

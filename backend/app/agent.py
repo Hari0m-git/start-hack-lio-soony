@@ -241,8 +241,9 @@ def check_decision(decision: dict, known_paths: set[str], contacts: set[str]) ->
         decision["recommended_option"] = 0
     # Evidence means files. Anything else the agent lists (a mail, a tool result) is shown elsewhere and dropped
     # here; something that looks like a file path but does not exist is an invented source and is reported.
+    folders = {p.split("/")[0] for p in known_paths}
     for holder in (decision, *options):
-        holder["evidence"] = [p for p in holder.get("evidence") or [] if p in known_paths or "/" in p]
+        holder["evidence"] = [p for p in holder.get("evidence") or [] if p in known_paths or p.split("/")[0] in folders]
     cited = set(decision["evidence"]) | {p for o in options for p in o["evidence"]}
     unknown = sorted(p for p in cited if p not in known_paths)
     if unknown:
@@ -379,7 +380,8 @@ CARD_SCHEMA = {
         "suggestion": {"type": "string", "description": "What the agent suggests, with its cost if known: one sentence, "
                        "at most 30 words"},
         "your_step": {"type": "string", "description": "What the reader has to do now, starting with a verb: one sentence, "
-                      "at most 20 words. "
+                      "at most 20 words. The reader is the one who approves: say what to approve or decide, for "
+                      "example 'Approve the order for 5,900 art books', not who else should act. "
                       "If nothing is needed from them right now, say what they are waiting for."},
     },
 }

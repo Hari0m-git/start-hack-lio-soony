@@ -74,7 +74,8 @@ def test_only_files_count_as_evidence_and_an_invented_file_is_reported():
     from app.agent import check_decision
 
     decision = {"options": [{"title": "t", "evidence": ["soony/erp/stock.csv", "Supplier email, 18:05"]}], "recommended_option": 0,
-                "evidence": ["soony/erp/stock.csv", "Supplier email from Agnieszka Nowak", "soony/erp/invented.csv"], "actions": []}
+                "evidence": ["soony/erp/stock.csv", "Supplier email from Agnieszka Nowak", "soony/erp/invented.csv",
+                             "Karton Nowak reply 18:19: checking Warta Trans ETA/cost"], "actions": []}
     problems = check_decision(decision, {"soony/erp/stock.csv"}, set())
     assert problems == ["cites files that do not exist: soony/erp/invented.csv"]
     assert decision["options"][0]["evidence"] == ["soony/erp/stock.csv"]
