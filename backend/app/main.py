@@ -31,6 +31,8 @@ def _mailbox(settings: Settings) -> Mailbox | None:
 
 
 def _save(settings: Settings) -> None:
+    if not settings.agents_on:
+        return  # a copy that only shows the desk holds an older picture and must never overwrite the live one
     try:
         durable.save(settings.db_path)
     except Exception:  # losing a backup must not stop the agents
@@ -143,6 +145,8 @@ def edit_draft(message_id: int, edit: DraftEdit, conn=Depends(db)) -> dict:
 @app.post("/api/messages/{message_id}/send", dependencies=[Depends(guard)])
 def approve_and_send(message_id: int, conn=Depends(db)) -> dict:
     """The human decision: this is the only place a message leaves the system."""
+    if not get_settings().agents_on:
+        raise HTTPException(409, "This copy of the desk only shows the data. Approve on the copy where the agents run.")
     mailbox = _mailbox(get_settings())
     if not mailbox:
         raise HTTPException(503, "no mailbox is configured")

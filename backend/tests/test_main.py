@@ -66,9 +66,16 @@ def test_a_draft_can_be_reworded_but_a_sent_message_cannot(client, tmp_path):
     assert client.patch(f"/api/messages/{mid}", json={"subject": "x", "body": "y"}).status_code == 409
 
 
-def test_nothing_is_sent_without_a_mailbox(client, tmp_path):
+def test_nothing_is_sent_without_a_mailbox(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTS", "on")
     _, mid = add_draft(tmp_path)
     assert client.post(f"/api/messages/{mid}/send").status_code == 503
+
+
+def test_a_copy_without_agents_cannot_send(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTS", "off")
+    _, mid = add_draft(tmp_path)
+    assert client.post(f"/api/messages/{mid}/send").status_code == 409
 
 
 def test_healthz(client):
