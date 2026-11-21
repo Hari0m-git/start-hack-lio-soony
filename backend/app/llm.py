@@ -24,17 +24,22 @@ PRICES = {
     "gpt-5.4-nano": (0.20, 0.02, 1.25),
 }
 _client: httpx.Client | None = None
+_key = 0  # which of the configured keys is in use
+
+
+def keys() -> list[str]:
+    return [k for k in (os.environ.get("OPENAI_API_KEY"), os.environ.get("OPENAI_API_KEY_FALLBACK")) if k]
 
 
 def client() -> httpx.Client:
     global _client
     if _client is None:
-        _client = httpx.Client(
-            base_url="https://api.openai.com/v1",
-            headers={"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}"},
-            timeout=180,
-        )
+        _client = httpx.Client(base_url="https://api.openai.com/v1", timeout=180)
     return _client
+
+
+def out_of_credit(r: httpx.Response) -> bool:
+    return r.status_code == 401 or (r.status_code == 429 and "insufficient_quota" in r.text)
 
 
 def cost_usd(model: str, usage: dict) -> float | None:
@@ -63,8 +68,13 @@ def _meter(purpose: str, model: str, usage: dict) -> None:
 
 
 def _post(body: dict, purpose: str) -> dict:
+    global _key
     for attempt in range(4):
-        r = client().post("/chat/completions", json=body)
+        r = client().post("/chat/completions", json=body, headers={"Authorization": f"Bearer {keys()[_key]}"})
+        if out_of_credit(r) and _key + 1 < len(keys()):
+            _key += 1  # the first key is used up or revoked: carry on with the spare one
+            log.warning("switching to the spare API key")
+            continue
         if r.status_code in (429, 500, 502, 503, 504) and attempt < 3:
             time.sleep(2 ** attempt)
             continue

@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from app import llm
+from app.db import audit
 from app.mail import Mailbox
 from app.outbox import blanks, parse_when, send_draft, supplier_contacts
 
@@ -107,6 +108,7 @@ def send_what_is_safe(conn: sqlite3.Connection, mailbox: Mailbox, now: datetime 
         try:
             send_draft(conn, mailbox, draft["id"], sent_by="agent")
             sent.append({"id": draft["id"], "case_key": draft["case_key"], "to": draft["counterpart_email"]})
+            audit(conn, "agent", "sent a question on its own", draft["case_key"], f"{draft['counterpart_name']}: {draft['subject']}")
         except Exception as e:
             log.exception("could not send message %s", draft["id"])
             conn.execute("UPDATE messages SET held_because = ? WHERE id = ?", (f"Sending failed: {e}", draft["id"]))

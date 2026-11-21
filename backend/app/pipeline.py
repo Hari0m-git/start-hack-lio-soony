@@ -21,7 +21,8 @@ from app.db import connect
 from app.forecast import simulate
 from app.ingest import ingest_pending
 from app.mail import Mailbox
-from app.outbox import parse_when, sync_mailbox
+from app.db import audit
+from app.outbox import SUSPICIOUS, parse_when, sync_mailbox
 from app.portal import PortalSync, portal_client
 from app.truth import assess
 
@@ -69,12 +70,14 @@ def due_cases(conn: sqlite3.Connection, now: datetime) -> dict[str, str]:
     forecast = simulate(conn, assessment, priority["order"])
     if not forecast.get("ready"):
         return {}
-    worked = {r["material_id"]: r for r in conn.execute("SELECT material_id, basis, runs_log FROM cases")}
+    worked = {r["material_id"]: r for r in conn.execute("SELECT material_id, basis, runs_log, needs_human FROM cases")}
     hour_ago = (now.astimezone(timezone.utc) - timedelta(hours=1)).isoformat(timespec="seconds")
     due = {}
     for m in parts_at_risk(assessment, forecast):
         basis = basis_of(build_brief(conn, m, assessment, priority, forecast))
         if m in worked:
+            if (worked[m]["needs_human"] or "").startswith(SUSPICIOUS):
+                continue  # stopped over a suspicious mail: only a person restarts it
             recent = [t for t in json.loads(worked[m]["runs_log"] or "[]") if t >= hour_ago]
             # A chatty supplier must not turn into a bill: a case is worked at most this often per hour by itself.
             if worked[m]["basis"] == basis or awaiting_reply(conn, m, now) or len(recent) >= MAX_RUNS_PER_HOUR:
@@ -136,6 +139,7 @@ def tick(settings: Settings, mailbox: Mailbox | None = None, now: datetime | Non
                 hand_over(conn, material_id, due[material_id],
                           f"The agent could not work this case after {MAX_FAILURES} attempts ({error}). Please take it over.")
                 report["handed_over"].append(material_id)
+                audit(conn, "agent", "handed a case to a person", f"part:{material_id}", error)
         ensure_cards(conn)
         if mailbox:
             try:

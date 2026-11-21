@@ -176,6 +176,18 @@ export function Agents({ data }: { data: Overview }) {
           </dl>
         </Card>
       </div>
+      <Card className="p-5">
+        <Label>Record of who did what</Label>
+        <ul className="mt-3 space-y-2 text-sm">
+          {data.audit.map((a, i) => (
+            <li key={i}>
+              <span className="tabular-nums text-muted">{clock(a.ts)}</span> <span className="font-medium">{a.actor}</span> {a.action}
+              {a.detail && <span className="text-muted"> · {a.detail}</span>}
+            </li>
+          ))}
+          {data.audit.length === 0 && <li className="text-muted">Nothing recorded yet. Approvals, refusals, automatic sends and handovers appear here.</li>}
+        </ul>
+      </Card>
       <Card className="p-5 text-sm">
         <Label>Status</Label>
         <p className="mt-2">

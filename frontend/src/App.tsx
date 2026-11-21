@@ -116,7 +116,10 @@ export default function App() {
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-3">
           <div className="flex items-baseline gap-3">
             <div className="text-xl font-semibold tracking-tight">Foredock</div>
-            <div className="hidden text-sm text-muted sm:block">Soony · Grand Heist 6 launch</div>
+            <div className="hidden text-sm text-muted sm:block">
+              Soony · Grand Heist 6 launch · {data.me.name ?? "shared access"}
+              {data.me.role === "viewer" && " (view only)"}
+            </div>
           </div>
           <nav className="order-3 flex w-full gap-1 sm:order-none sm:w-auto">
             {PAGES.map((p) => (

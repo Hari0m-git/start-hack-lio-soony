@@ -97,3 +97,43 @@ def test_status_lists_drops_but_not_the_baseline(client, tmp_path):
     assert body["files"] == 1
     assert body["last_sync"]["listed"] == 2
     assert body["drops"] == [{"ts": "t1", "path": "b.pdf", "kind": "new"}]
+
+
+USERS = '[{"name": "Paul Winter", "key": "pw", "role": "approver", "limit_eur": 50000}, {"name": "Maren Vogt", "key": "mv", "role": "admin"}]'
+
+
+def test_each_person_has_a_key_and_the_shared_key_only_looks(client, monkeypatch):
+    monkeypatch.setenv("APP_ACCESS_KEY", "shared")
+    monkeypatch.setenv("APP_USERS", USERS)
+    assert client.get("/api/me", headers={"X-Access-Key": "pw"}).json() == {"name": "Paul Winter", "role": "approver", "limit_eur": 50000, "verified": True}
+    assert client.get("/api/me", headers={"X-Access-Key": "shared"}).json()["role"] == "viewer"
+    assert client.get("/api/me", headers={"X-Access-Key": "nope"}).status_code == 401
+    assert client.post("/api/cases/X/rework", headers={"X-Access-Key": "shared"}).status_code == 403
+
+
+def test_approval_limits_come_from_the_customer_not_the_model():
+    from app.main import may_approve
+
+    order = {"commits": "money_or_terms"}
+    case = lambda cost, cur="EUR": {"decision": '{"options": [{"cost": %s, "currency": "%s"}], "recommended_option": 0}' % (cost, cur)}
+    paul = {"name": "Paul Winter", "role": "approver", "limit_eur": 50000}
+    assert may_approve(paul, order, case(12390)) is None
+    assert "your limit" in may_approve(paul, order, case(74324))
+    assert "not known in euros" in may_approve(paul, order, case(74324, "USD"))
+    assert may_approve(paul, {"commits": "nothing"}, case(74324)) is None          # a question commits nothing
+    assert may_approve({"name": "Maren", "role": "admin"}, order, case(74324)) is None
+    assert "look, not approve" in may_approve({"name": None, "role": "viewer"}, order, case(1))
+
+
+def test_a_refused_approval_is_on_the_record(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTS", "on")
+    monkeypatch.setenv("APP_USERS", USERS)
+    monkeypatch.setattr("app.main._mailbox", lambda settings: object())
+    conn, mid = add_draft(tmp_path)
+    conn.execute("UPDATE messages SET commits = 'money_or_terms' WHERE id = ?", (mid,))
+    conn.execute("INSERT INTO cases (key, material_id, status, basis, decision, created_at, updated_at) VALUES "
+                 "('part:X', 'X', 'proposed', 'b', '{\"options\": [{\"cost\": 74324, \"currency\": \"EUR\"}], \"recommended_option\": 0}', 't', 't')")
+    conn.commit()
+    assert client.post(f"/api/messages/{mid}/send", headers={"X-Access-Key": "pw"}).status_code == 403
+    assert tuple(conn.execute("SELECT actor, action FROM audit").fetchone()) == ("Paul Winter", "approval refused")
+    assert conn.execute("SELECT status FROM messages WHERE id = ?", (mid,)).fetchone()[0] == "draft"

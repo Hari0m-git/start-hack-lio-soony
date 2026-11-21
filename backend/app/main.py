@@ -1,5 +1,6 @@
 import asyncio
 import hmac
+import json
 import logging
 import os
 from urllib.parse import unquote
@@ -16,7 +17,7 @@ from pydantic import BaseModel
 from app import durable, views
 from app.agent import LOCAL, run_case
 from app.config import Settings, get_settings
-from app.db import connect
+from app.db import audit, connect
 from app.mail import Mailbox, RecipientNotAllowed
 from app.outbox import send_draft
 from app.pipeline import tick
@@ -92,15 +93,43 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Soony launch agents", lifespan=lifespan)
 
 
-def guard(x_access_key: str | None = Header(None), key: str | None = Query(None)) -> None:
-    """Customer data sits behind this API. With a key configured, every call must present it."""
+def guard(x_access_key: str | None = Header(None), key: str | None = Query(None)) -> dict:
+    """Customer data sits behind this API. Every call says who is asking; the answer is that person's role.
+
+    Each person has their own key (APP_USERS). The shared key still opens the desk: with personal keys set up it
+    only lets its holder look, without them it acts as before, as an unnamed administrator."""
     settings = get_settings()
-    expected = settings.access_key
-    if not expected and settings.public_url:
-        # Deployed without a key: refuse rather than publish the customer's data.
-        raise HTTPException(503, "APP_ACCESS_KEY is not set on this deployment")
-    if expected and not hmac.compare_digest((x_access_key or key or "").encode(), expected.encode()):
-        raise HTTPException(401, "access key required")
+    given = (x_access_key or key or "").encode()
+    for user in settings.users:
+        if hmac.compare_digest(given, str(user["key"]).encode()):
+            return {"name": user["name"], "role": user["role"], "limit_eur": user.get("limit_eur"), "verified": True}
+    if not settings.access_key and not settings.users:
+        if settings.public_url:
+            # Deployed without a key: refuse rather than publish the customer's data.
+            raise HTTPException(503, "APP_ACCESS_KEY is not set on this deployment")
+        return {"name": None, "role": "admin", "limit_eur": None, "verified": False}
+    if settings.access_key and hmac.compare_digest(given, settings.access_key.encode()):
+        return {"name": None, "role": "viewer" if settings.users else "admin", "limit_eur": None, "verified": False}
+    raise HTTPException(401, "access key required")
+
+
+def may_approve(user: dict, message, case) -> str | None:
+    """Why this person may not release this message; None if they may. The customer's limits decide, not the model."""
+    if user["role"] == "viewer":
+        return "Your key lets you look, not approve. Sign in with your personal key."
+    if user["role"] == "admin" or message["commits"] == "nothing":
+        return None
+    decision = json.loads(case["decision"]) if case and case["decision"] else {}
+    options = decision.get("options") or []
+    pick = options[decision.get("recommended_option", 0)] if options else {}
+    cost, limit = pick.get("cost"), user.get("limit_eur")
+    if limit is None:
+        return "No approval limit is set for you."
+    if cost is None or (pick.get("currency") or "EUR").upper() != "EUR":
+        return "The cost is not known in euros, so this needs someone without a limit."
+    if cost >= limit:
+        return f"This commits EUR {cost:,.0f}; your limit is EUR {limit:,.0f}."
+    return None
 
 
 def db():
@@ -126,25 +155,34 @@ def status(conn=Depends(db)) -> dict:
     return {"files": files, "last_sync": dict(last) if last else None, "drops": [dict(d) for d in drops]}
 
 
-@app.get("/api/overview", dependencies=[Depends(guard)])
-def overview(conn=Depends(db)) -> dict:
+@app.get("/api/me")
+def me(user: dict = Depends(guard)) -> dict:
+    return user
+
+
+@app.get("/api/overview")
+def overview(conn=Depends(db), user: dict = Depends(guard)) -> dict:
     mail_address = os.environ.get("MAIL_ADDRESS") if get_settings().mail_configured else None
-    return {**views.overview(conn, datetime.now(LOCAL)), "loop": {**state, "agents_on": get_settings().agents_on},
+    return {**views.overview(conn, datetime.now(LOCAL)), "loop": {**state, "agents_on": get_settings().agents_on}, "me": user,
             "mail_address": mail_address}
 
 
 @app.patch("/api/messages/{message_id}", dependencies=[Depends(guard)])
-def edit_draft(message_id: int, edit: DraftEdit, conn=Depends(db)) -> dict:
+def edit_draft(message_id: int, edit: DraftEdit, conn=Depends(db), user: dict = Depends(guard)) -> dict:
+    if user["role"] == "viewer":
+        raise HTTPException(403, "Your key lets you look, not change.")
     changed = conn.execute("UPDATE messages SET subject = ?, body = ?, body_english = NULL WHERE id = ? AND status = 'draft'",
                            (edit.subject, edit.body, message_id)).rowcount
     conn.commit()
     if not changed:
         raise HTTPException(409, "only a draft can be edited")
+    audit(conn, user["name"] or "shared key", "reworded a draft", None, edit.subject)
     return {"ok": True}
 
 
 @app.post("/api/messages/{message_id}/send", dependencies=[Depends(guard)])
-def approve_and_send(message_id: int, conn=Depends(db), x_approver: str | None = Header(None)) -> dict:
+def approve_and_send(message_id: int, conn=Depends(db), x_approver: str | None = Header(None),
+                     user: dict = Depends(guard)) -> dict:
     """The human decision: this is the only place a message leaves the system."""
     if not get_settings().agents_on:
         raise HTTPException(409, "This copy of the desk only shows the data. Approve on the copy where the agents run.")
@@ -152,8 +190,16 @@ def approve_and_send(message_id: int, conn=Depends(db), x_approver: str | None =
     if not mailbox:
         raise HTTPException(503, "no mailbox is configured")
     try:
-        # A name typed into the desk is a record, not proof of identity: everyone shares one access key.
-        sent = send_draft(conn, mailbox, message_id, approved_by=unquote(x_approver or "").strip()[:80] or None)
+        row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
+        case = conn.execute("SELECT * FROM cases WHERE key = ?", (row["case_key"],)).fetchone() if row else None
+        refusal = may_approve(user, row, case) if row else None
+        if refusal:
+            audit(conn, user["name"] or "shared key", "approval refused", row["case_key"], refusal)
+            raise HTTPException(403, refusal)
+        # A personal key proves who approved. With the shared key the typed name is a record, not proof.
+        name = user["name"] or (unquote(x_approver or "").strip()[:80] + " (unverified)" if x_approver else None)
+        sent = send_draft(conn, mailbox, message_id, approved_by=name)
+        audit(conn, name or "shared key", "approved and sent", row["case_key"], f"{row['counterpart_name']}: {row['subject']}")
     except (ValueError, RecipientNotAllowed) as e:
         raise HTTPException(409, str(e)) from e
     _save(get_settings())
@@ -161,9 +207,13 @@ def approve_and_send(message_id: int, conn=Depends(db), x_approver: str | None =
 
 
 @app.post("/api/cases/{material_id}/rework", dependencies=[Depends(guard)])
-async def rework(material_id: str) -> dict:
+async def rework(material_id: str, user: dict = Depends(guard)) -> dict:
+    if user["role"] == "viewer":
+        raise HTTPException(403, "Your key lets you look, not change.")
+
     def work() -> None:
         with closing(connect(get_settings().db_path)) as conn:
+            audit(conn, user["name"] or "shared key", "asked for the case to be worked again", f"part:{material_id}")
             run_case(conn, material_id)
 
     await asyncio.to_thread(work)

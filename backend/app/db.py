@@ -120,6 +120,14 @@ CREATE TABLE IF NOT EXISTS llm_usage (
     output_tokens INTEGER NOT NULL,
     cost_usd REAL
 );
+CREATE TABLE IF NOT EXISTS audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    case_key TEXT,
+    detail TEXT
+);
 CREATE TABLE IF NOT EXISTS ingest_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts TEXT NOT NULL,
@@ -131,6 +139,15 @@ CREATE TABLE IF NOT EXISTS ingest_log (
     detail TEXT
 );
 """
+
+
+def audit(conn: sqlite3.Connection, actor: str, action: str, case_key: str | None = None, detail: str | None = None) -> None:
+    """Append to the record of who did what. Rows are only ever added."""
+    from datetime import datetime, timezone
+
+    conn.execute("INSERT INTO audit (ts, actor, action, case_key, detail) VALUES (?, ?, ?, ?, ?)",
+                 (datetime.now(timezone.utc).isoformat(timespec="seconds"), actor, action, case_key, detail))
+    conn.commit()
 
 
 ADDED_COLUMNS = {

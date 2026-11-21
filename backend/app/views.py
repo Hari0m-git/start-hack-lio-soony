@@ -101,6 +101,7 @@ def overview(conn: sqlite3.Connection, now: datetime) -> dict:
         "documents_read": conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0],
         "needs_review": [dict(r) for r in review],
         "spend": spend(conn, now),
+        "audit": [dict(r) for r in conn.execute("SELECT ts, actor, action, case_key, detail FROM audit ORDER BY id DESC LIMIT 60")],
         "activity": activity(conn, facts),
         "foreign_mail": [dict(r) for r in conn.execute(
             "SELECT counterpart_name, subject, sent_at FROM messages WHERE direction = 'out' AND sent_by = 'other' ORDER BY id")],

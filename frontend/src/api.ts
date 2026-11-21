@@ -136,6 +136,8 @@ export type Overview = {
   needs_review: { path: string; detail: string }[];
   spend: { today_usd: number; budget_usd: number; by_kind: { kind: string; usd: number; calls: number }[] };
   activity: { at: string | null; kind: "files" | "reply" | "sent_by_agent" | "sent_by_human" | "handover"; case_key: string | null; text: string; detail: string | null }[];
+  me: { name: string | null; role: "viewer" | "approver" | "admin"; limit_eur: number | null; verified: boolean };
+  audit: { ts: string; actor: string; action: string; case_key: string | null; detail: string | null }[];
   plan: { short_now: number; short_if_all_solved: number | null };
   foreign_mail: { counterpart_name: string | null; subject: string; sent_at: string }[];
   agent_work: { sent_by_agents: number; approved_by_people: number; replies: number; findings: number };
