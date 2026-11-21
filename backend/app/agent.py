@@ -9,11 +9,11 @@ import hashlib
 import json
 import logging
 import sqlite3
-from datetime import date, datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app import llm
-from app.forecast import simulate
+from app.forecast import _moment, simulate
 from app.truth import Assessment, Facts, assess, load
 
 log = logging.getLogger(__name__)
@@ -36,7 +36,8 @@ could be released. Give each option its cost, the copies it saves and when it ar
 - Check the approval policy and the organisation chart: who may approve this, and is that position filled? If the \
 policy names a role that is vacant, say who decides instead according to the policy.
 - List only options that can put parts on the dock in time; name what you ruled out in one line each under ruled_out. Recommend exactly one option and say why in terms of cost against copies saved.
-- The case tells you the current time and when the line stops. Parts are needed on the dock before the line stops, not merely before the deadline. Ask for answers within a time that is still ahead and realistic.
+- The case tells you the current time, when the line stops, and the latest dock time that still saves every copy. Aim for the dock before the line stops; anything up to that latest time still saves every copy, and later arrivals save fewer. Ask for answers within a time that is still ahead and realistic.
+- Other open cases are listed with what they recommend. Do not recommend something that takes away what another case relies on.
 - Write dates and times the way a person would ("Sunday 22 Nov, 11:00 CET"), never as ISO strings.
 - Draft every message needed to execute it. Write to a supplier in the supplier's preferred language, short and \
 specific: order and document numbers, quantities, the time by which you need an answer, and the exact questions. \
@@ -249,9 +250,17 @@ def build_brief(conn: sqlite3.Connection, material_id: str, assessment: Assessme
             for m in conn.execute("SELECT * FROM messages WHERE case_key = ? AND gmail_id IS NOT NULL ORDER BY id",
                                   (f"part:{material_id}",))]
     position = next((c for c in forecast.get("components", []) if c["material_id"] == material_id), None)
+    # The line that ends up short of this part is the last in priority that uses it. The missing pieces still
+    # save every copy as long as that line has time left to pack them.
+    users = [p for p in forecast.get("products", []) if position and p["product_id"] in position["used_in"]]
+    last = next((p for p in reversed(users) if p["short"] > 0), users[-1] if users else None)
+    latest = None
+    if position and last and last["rate_per_hour"] and _moment(forecast.get("deadline")):
+        latest = (_moment(forecast["deadline"]) - timedelta(hours=position["gap"] / last["rate_per_hour"])).isoformat(timespec="minutes")
     return {"part": material_id, "deadline": forecast.get("deadline"),
-            "this_part": position and {k: position[k] for k in ("need", "usable_stock", "inbound_counted",
-                                                                 "inbound_needing_action", "confirmed_by_supplier", "gap")},
+            "this_part": position and {**{k: position[k] for k in ("need", "usable_stock", "inbound_counted",
+                                                                    "inbound_needing_action", "confirmed_by_supplier", "gap")},
+                                       "latest_dock_time_that_still_saves_every_copy": latest},
             "lines_using_this_part": lines, "priority_rule": priority, "correspondence_so_far": mail,
             "findings": [{"title": f.title, "detail": f.detail} for f in assessment.findings if f.material_id == material_id]}
 
@@ -267,7 +276,12 @@ def run_case(conn: sqlite3.Connection, material_id: str, now: datetime | None = 
     box = Toolbox(conn, assessment, priority["order"])
     brief = build_brief(conn, material_id, assessment, priority, simulate(conn, assessment, priority["order"]))
     basis = basis_of(brief)
-    brief = {"now": now.strftime("%A %d %b %Y, %H:%M") + " (Europe/Berlin)", **brief}
+    # Context that must not reopen the case when it changes: the clock, and what the other cases recommend.
+    others = [{"part": r["material_id"], "recommendation": (json.loads(r["decision"]).get("options") or [{}])[
+                   json.loads(r["decision"]).get("recommended_option", 0)].get("title")}
+              for r in conn.execute("SELECT material_id, decision FROM cases WHERE material_id != ? AND decision IS NOT NULL",
+                                    (material_id,))]
+    brief = {"now": now.strftime("%A %d %b %Y, %H:%M") + " (Europe/Berlin)", **brief, "other_open_cases": others}
     messages = [{"role": "system", "content": SYSTEM},
                 {"role": "user", "content": f"Case: {json.dumps(brief, ensure_ascii=False)}"}]
     tools = [{"type": "function", "function": t} for t in TOOLS]
