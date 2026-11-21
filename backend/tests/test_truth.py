@@ -230,6 +230,25 @@ def test_solving_one_part_is_only_worth_what_the_other_parts_allow(conn):
     assert short(covered=frozenset({"B", "C"})) == {"P1": 0, "P2": 0}
 
 
+def test_a_newer_count_moves_the_forecast_forward_and_received_goods_are_not_counted_twice(conn):
+    put(conn, "doc_line", "stock_update.xlsx",
+        {"as_of": "2026-11-21T20:00:00", "material_id": "P1", "qty_final": 70},      # 70 packed since 13:00
+        {"as_of": "2026-11-21T20:00:00", "material_id": "B", "qty_final": 830},      # 900 on the books minus 70 used
+        {"as_of": "2026-11-21T20:00:00", "material_id": "A", "qty_final": 1180})     # includes 250 received today
+    put(conn, "goods_receipt", "receipts_update.csv",
+        {"gr_number": "200", "gr_date": "2026-11-21", "po_number": "5", "material_id": "A", "qty_ordered": 400, "qty_received": 250})
+    conn.execute("UPDATE records SET data = json_set(data, '$.etd', '2026-11-20') WHERE entity = 'shipment'")
+    a = assess(conn, TODAY)
+    air = next(i for i in a.inbound if i.shipment_id == "S-1")
+    assert (air.erp_qty, air.credible_qty) == (150, 0)             # shipped 250 of 400, all 250 are in
+    f = simulate(conn, a, ["P1", "P2"])
+    p1 = next(p for p in f["products"] if p["product_id"] == "P1")
+    assert (f["as_of"], p1["packed"], p1["to_pack"]) == ("2026-11-21T20:00", 70, 130)
+    b = next(c for c in f["components"] if c["material_id"] == "B")
+    assert (b["erp_stock"], b["usable_stock"], b["gap"]) == (830, 10, 120)   # 720 overbooked and 100 on hold stay out
+    assert next(c for c in f["components"] if c["material_id"] == "A")["inbound_counted"] == 0
+
+
 def test_forecast_says_what_is_missing_when_documents_are_missing(conn):
     conn.execute("DELETE FROM records WHERE entity = 'doc_shift'")
     assert simulate(conn, assess(conn, TODAY))["ready"] is False

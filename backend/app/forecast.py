@@ -39,6 +39,18 @@ def pack_status(conn: sqlite3.Connection) -> tuple[datetime | None, dict[str, di
     return max((r["_at"] for r in latest.values()), default=None), latest
 
 
+def newer_count(conn: sqlite3.Connection, after: datetime, products: set[str]) -> tuple[datetime, dict[str, float]] | None:
+    """A later document may state what is packed and what is on the books without repeating rates and demand.
+    Returns the newest such count: quantities per product and per part."""
+    by_source: dict[str, tuple[datetime, dict[str, float]]] = {}
+    for line in load(conn, "doc_line"):
+        at = _moment(line.get("as_of"))
+        if at and at > after and line.get("material_id") and line.get("qty_final") is not None:
+            by_source.setdefault(line["_source"], (at, {}))[1][line["material_id"]] = _num(line["qty_final"])
+    counts = [c for c in by_source.values() if products & set(c[1])]
+    return max(counts, key=lambda c: c[0]) if counts else None
+
+
 def shift_windows(conn: sqlite3.Connection, launch: date) -> list[tuple[datetime, datetime]]:
     """Working windows of the packing lines from the newest document that states them."""
     rows = [r for r in load(conn, "doc_shift") if _clock(r.get("start")) and _clock(r.get("end"))]
@@ -71,6 +83,14 @@ def simulate(conn: sqlite3.Connection, assessment: Assessment, priority: list[st
     start, status = pack_status(conn)
     if not start:
         return {"ready": False, "reason": "No document states how many copies are still to pack."}
+    book: dict[str, float] = {}
+    count = newer_count(conn, start, set(status))
+    if count:
+        start, book = count
+        for p in status:
+            if p in book:
+                packed_more = book[p] - _num(status[p].get("packed"))
+                status[p] = {**status[p], "packed": book[p], "still_to_pack": max(0, _num(status[p]["still_to_pack"]) - packed_more)}
     launch = max((_day(facts.products.get(p, {}).get("launch_date")) or start.date() for p in status), default=start.date())
     windows = shift_windows(conn, launch)
     if not windows:
@@ -99,7 +119,12 @@ def simulate(conn: sqlite3.Connection, assessment: Assessment, priority: list[st
     for b in assessment.batches:
         erp[b.material_id] += b.erp_qty
         usable[b.material_id] += b.erp_qty if trust_erp else b.usable_qty
+    on_books = {c: max(0, erp[c] - used[c]) for c in parts}
     available = {c: max(0, usable[c] - used[c]) for c in parts}
+    if book:
+        # A count newer than the snapshot is the starting point. What the findings say cannot be used is still unusable.
+        on_books = {c: book.get(c, on_books[c]) for c in parts}
+        available = {c: max(0, on_books[c] - (0 if trust_erp else erp[c] - usable[c])) for c in parts}
     at_start = dict(available)
 
     # Inbound: when each shipment can be counted on.
@@ -184,7 +209,7 @@ def simulate(conn: sqlite3.Connection, assessment: Assessment, priority: list[st
     } for p in order]
     components = [{
         "material_id": c, "description": facts.components.get(c, {}).get("description"),
-        "need": need[c], "erp_stock": max(0, erp[c] - used[c]), "usable_stock": at_start[c],
+        "need": need[c], "erp_stock": on_books[c], "usable_stock": at_start[c],
         "inbound_counted": counted[c], "inbound_needing_action": at_risk[c], "confirmed_by_supplier": confirmed[c],
         "gap": max(0, need[c] - at_start[c] - counted[c]),
         "used_in": [p for p in order if c in bom[p]],

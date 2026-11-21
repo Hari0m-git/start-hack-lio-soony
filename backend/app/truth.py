@@ -273,6 +273,7 @@ def assess(conn: sqlite3.Connection, today: date | None = None) -> Assessment:
     newest = max((datetime.fromisoformat(u) for u in updates), default=None)
     tracker = {t.get("shipment_id"): t for t in f.tracker if t.get("shipment_id")}
     inbound: list[Inbound] = []
+    arrived: list[tuple[Inbound, float]] = []
     for s in f.shipments:
         eta, status = _day(s.get("eta")), str(s.get("status") or "").lower()
         site = s.get("dest_site") or s.get("destination")
@@ -283,9 +284,14 @@ def assess(conn: sqlite3.Connection, today: date | None = None) -> Assessment:
             open_lines = [p for po in pos for p in f.po_by_number.get(po, []) if p["material_id"] == material
                           and str(p.get("status") or "").lower() not in ("delivered", "cancelled")]
             qty = sum(_num(p.get("quantity")) for p in open_lines)
-            item = Inbound(s["shipment_id"], material, qty, qty, dock.isoformat() if dock else None, status,
+            # What has been booked in from this shipment since it left is no longer on its way.
+            left = _day(s.get("etd"))
+            received = sum(_num(g.get("qty_received")) for g in f.receipts if g["material_id"] == material
+                           and str(g.get("po_number")) in pos and left and (_day(g.get("gr_date")) or date.min) >= left)
+            item = Inbound(s["shipment_id"], material, max(0, qty - received), qty, dock.isoformat() if dock else None, status,
                            onward_days=last_leg, reference=s.get("reference"))
             inbound.append(item)
+            arrived.append((item, received))
 
             short = [l for l in f.doc_lines if l.get("material_id") == material and l.get("qty_ordered") is not None
                      and l.get("qty_final") is not None and _num(l["qty_final"]) < _num(l["qty_ordered"])
@@ -342,6 +348,11 @@ def assess(conn: sqlite3.Connection, today: date | None = None) -> Assessment:
                 needs_action=True, evidence=[_evidence(s["_source"], f"shipment {s['shipment_id']}")],
                 data={"shipment_id": s["shipment_id"]},
             ))
+
+    for item, received in arrived:
+        if received:
+            item.credible_qty = max(0, item.credible_qty - received)
+            item.reasons.append(f"{received:,.0f} already received")
 
     # 5. Parts on the bill of materials that were never bought, received or stocked on their own.
     packed = {p["product_id"] for p in f.packout if _num(p.get("units_packed")) > 0}
