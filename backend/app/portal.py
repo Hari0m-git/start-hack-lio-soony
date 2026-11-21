@@ -99,6 +99,14 @@ class PortalSync:
         for path, f in listed.items():
             old = known.get(path)
             if old == f["sha256"]:
+                if not self.blob_path(old).exists():
+                    # The database came back after a restart but the disk is empty: fetch the file again.
+                    # Nothing changed on the portal, so this is not a drop.
+                    try:
+                        self._fetch(path, old)
+                    except (httpx.HTTPError, ValueError, OSError) as e:
+                        failed += 1
+                        log.warning("could not fetch %s: %s", path, e)
                 continue
             try:
                 self._fetch(path, f["sha256"])

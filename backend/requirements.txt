@@ -35,6 +35,10 @@ openpyxl==3.1.5
     # via soony-backend
 opentelemetry-api==1.45.2
     # via fastapi
+psycopg==3.3.9
+    # via soony-backend
+psycopg-binary==3.3.9 ; implementation_name != 'pypy'
+    # via psycopg
 pydantic==2.14.3
     # via fastapi
 pydantic-core==2.50.4
@@ -48,6 +52,7 @@ typing-extensions==4.16.0
     #   anyio
     #   fastapi
     #   opentelemetry-api
+    #   psycopg
     #   pydantic
     #   pydantic-core
     #   starlette
@@ -57,6 +62,8 @@ typing-inspection==0.4.5
     #   fastapi
     #   pydantic
 tzdata==2026.6
-    # via soony-backend
+    # via
+    #   psycopg
+    #   soony-backend
 uvicorn==0.54.0
     # via soony-backend

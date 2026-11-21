@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app import views
+from app import durable, views
 from app.agent import LOCAL, run_case
 from app.config import Settings, get_settings
 from app.db import connect
@@ -30,6 +30,13 @@ def _mailbox(settings: Settings) -> Mailbox | None:
     return Mailbox.from_env() if settings.mail_configured else None
 
 
+def _save(settings: Settings) -> None:
+    try:
+        durable.save(settings.db_path)
+    except Exception:  # losing a backup must not stop the agents
+        log.exception("could not save the state")
+
+
 def _now() -> datetime:
     return datetime.now(LOCAL).replace(tzinfo=None)
 
@@ -41,6 +48,7 @@ async def run_loop(settings: Settings) -> None:
         try:
             report = await asyncio.to_thread(tick, settings, mailbox)
             state["last_tick"] = {"at": _now().isoformat(timespec="seconds"), **report}
+            await asyncio.to_thread(_save, settings)
             if any(report[k] for k in ("drops", "files_read", "replies", "cases_worked", "errors")):
                 log.info("tick: %s", report)
         except Exception:
@@ -64,6 +72,10 @@ async def keep_awake(public_url: str) -> None:
 async def lifespan(app: FastAPI):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = get_settings()
+    try:
+        durable.restore(settings.db_path)  # a wiped disk gets yesterday's knowledge back before anything is paid for again
+    except Exception:
+        log.exception("could not restore the state; starting from scratch")
     tasks = [asyncio.create_task(run_loop(settings))] if settings.agents_on else []
     if not settings.agents_on:
         log.info("AGENTS is not 'on': serving the desk only, the agents are not running here")
@@ -135,9 +147,11 @@ def approve_and_send(message_id: int, conn=Depends(db)) -> dict:
     if not mailbox:
         raise HTTPException(503, "no mailbox is configured")
     try:
-        return send_draft(conn, mailbox, message_id)
+        sent = send_draft(conn, mailbox, message_id)
     except (ValueError, RecipientNotAllowed) as e:
         raise HTTPException(409, str(e)) from e
+    _save(get_settings())
+    return sent
 
 
 @app.post("/api/cases/{material_id}/rework", dependencies=[Depends(guard)])
