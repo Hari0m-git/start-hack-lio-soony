@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.162.7",
     "httpx>=0.28.1",
+    "openpyxl>=3.1.5",
     "python-dotenv>=1.2.4",
     "uvicorn>=0.54.0",
 ]

@@ -47,6 +47,22 @@ CREATE TABLE IF NOT EXISTS records (
 );
 CREATE INDEX IF NOT EXISTS records_entity ON records (entity);
 CREATE INDEX IF NOT EXISTS records_source ON records (source_path);
+CREATE TABLE IF NOT EXISTS extractions (
+    sha256 TEXT PRIMARY KEY,
+    version TEXT NOT NULL,
+    data TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS documents (
+    path TEXT PRIMARY KEY,
+    sha256 TEXT NOT NULL,
+    doc_type TEXT NOT NULL,
+    language TEXT,
+    supplier_id TEXT,
+    doc_date TEXT,
+    summary TEXT,
+    data TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS ingest_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts TEXT NOT NULL,
