@@ -26,6 +26,7 @@ export function Chip({ tone = "neutral", children }: { tone?: Tone; children: Re
 }
 
 const STATES: Record<CaseState, { label: string; tone: Tone }> = {
+  needs_human: { label: "Handed over to you", tone: "bad" },
   needs_approval: { label: "Needs your approval", tone: "bad" },
   supplier_answered: { label: "Supplier answered", tone: "warn" },
   waiting_for_supplier: { label: "Waiting for supplier", tone: "neutral" },

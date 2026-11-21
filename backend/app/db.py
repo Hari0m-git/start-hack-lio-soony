@@ -110,6 +110,16 @@ CREATE TABLE IF NOT EXISTS commitments (
     shipment_ref TEXT,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS llm_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    cached_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cost_usd REAL
+);
 CREATE TABLE IF NOT EXISTS ingest_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts TEXT NOT NULL,
@@ -123,6 +133,12 @@ CREATE TABLE IF NOT EXISTS ingest_log (
 """
 
 
+ADDED_COLUMNS = {
+    "messages": {"reading": "TEXT", "commits": "TEXT", "sent_by": "TEXT", "held_because": "TEXT"},
+    "cases": {"needs_human": "TEXT"},
+}
+
+
 def connect(db_path: Path | str) -> sqlite3.Connection:
     if db_path != ":memory:":
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -131,9 +147,11 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     if db_path != ":memory:":
         conn.execute("PRAGMA journal_mode=WAL")
-    # Databases created before a column existed get it added; everything else is created on first use.
-    has_messages = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'messages'").fetchone()
-    if has_messages and "reading" not in {c["name"] for c in conn.execute("PRAGMA table_info(messages)")}:
-        conn.execute("ALTER TABLE messages ADD COLUMN reading TEXT")
     conn.executescript(SCHEMA)
+    # Databases created before a column existed get it added.
+    for table, columns in ADDED_COLUMNS.items():
+        have = {c["name"] for c in conn.execute(f"PRAGMA table_info({table})")}
+        for name, kind in columns.items():
+            if name not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
     return conn

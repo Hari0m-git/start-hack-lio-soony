@@ -87,15 +87,20 @@ export type Message = {
   created_at: string;
   sent_at: string | null;
   reading: Reading | null;
+  commits: "nothing" | "money_or_terms" | null;
+  sent_by: "agent" | "human" | null;
+  held_because: string | null;
 };
 
-export type CaseState = "needs_approval" | "supplier_answered" | "waiting_for_supplier" | "proposed";
+export type CaseState = "needs_human" | "needs_approval" | "supplier_answered" | "waiting_for_supplier" | "proposed";
 
 export type Case = {
   key: string;
   material_id: string;
   description: string | null;
   state: CaseState;
+  needs_human: string | null;
+  cost_usd: number;
   updated_at: string;
   summary: string | null;
   why: string | null;
@@ -124,6 +129,7 @@ export type Overview = {
   files: number;
   documents_read: number;
   needs_review: { path: string; detail: string }[];
+  spend: { today_usd: number; budget_usd: number; by_kind: { kind: string; usd: number; calls: number }[] };
   loop: { last_tick: { at: string; errors: string[] } | null; running: boolean };
   mail_address: string | null;
 };

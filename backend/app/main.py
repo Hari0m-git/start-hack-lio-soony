@@ -64,7 +64,9 @@ async def keep_awake(public_url: str) -> None:
 async def lifespan(app: FastAPI):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = get_settings()
-    tasks = [asyncio.create_task(run_loop(settings))]
+    tasks = [asyncio.create_task(run_loop(settings))] if settings.agents_on else []
+    if not settings.agents_on:
+        log.info("AGENTS is not 'on': serving the desk only, the agents are not running here")
     if settings.public_url:
         tasks.append(asyncio.create_task(keep_awake(settings.public_url)))
     yield
@@ -112,7 +114,8 @@ def status(conn=Depends(db)) -> dict:
 @app.get("/api/overview", dependencies=[Depends(guard)])
 def overview(conn=Depends(db)) -> dict:
     mail_address = os.environ.get("MAIL_ADDRESS") if get_settings().mail_configured else None
-    return {**views.overview(conn, _now()), "loop": state, "mail_address": mail_address}
+    return {**views.overview(conn, datetime.now(LOCAL)), "loop": {**state, "agents_on": get_settings().agents_on},
+            "mail_address": mail_address}
 
 
 @app.patch("/api/messages/{message_id}", dependencies=[Depends(guard)])

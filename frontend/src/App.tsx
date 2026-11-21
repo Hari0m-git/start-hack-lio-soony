@@ -15,7 +15,7 @@ import { clock, countdown, fileName, hoursBetween, money, num, when } from "./fo
 import { Button, Card, Chip, Label, StateChip } from "./ui";
 
 const REFRESH_MS = 20_000;
-const ORDER: CaseState[] = ["needs_approval", "supplier_answered", "proposed", "waiting_for_supplier"];
+const ORDER: CaseState[] = ["needs_human", "needs_approval", "supplier_answered", "proposed", "waiting_for_supplier"];
 type View = "evidence" | "erp" | "acted";
 const VIEWS: { id: View; label: string; hint: string }[] = [
   { id: "erp", label: "What the ERP says", hint: "Stock and inbound exactly as booked in the system." },
@@ -86,7 +86,8 @@ function Edition({ p, parts }: { p: ProductForecast; parts: Map<string, string> 
 
 function CaseCard({ item, stops, onOpen }: { item: Case; stops?: string; onOpen: () => void }) {
   const rec = item.recommended;
-  const tone = item.state === "needs_approval" ? "border-l-bad" : item.state === "waiting_for_supplier" ? "border-l-line" : "border-l-warn";
+  const urgent = item.state === "needs_approval" || item.state === "needs_human";
+  const tone = urgent ? "border-l-bad" : item.state === "waiting_for_supplier" ? "border-l-line" : "border-l-warn";
   return (
     <button
       onClick={onOpen}
@@ -185,7 +186,7 @@ export default function App() {
   const cases = [...data.cases].sort(
     (a, b) => ORDER.indexOf(a.state) - ORDER.indexOf(b.state) || (stopOf(a.material_id) ?? "z").localeCompare(stopOf(b.material_id) ?? "z"),
   );
-  const waiting = cases.filter((c) => c.state === "needs_approval").length;
+  const waiting = cases.filter((c) => c.state === "needs_approval" || c.state === "needs_human").length;
   const opened = cases.find((c) => c.key === open);
   const quiet = data.findings.filter((x) => x.level !== "stops_line");
 
@@ -351,6 +352,24 @@ export default function App() {
               {data.needs_review.length > 0 && ` ${data.needs_review.length} reading${data.needs_review.length > 1 ? "s" : ""} flagged for a human check.`}
               {data.loop.last_tick?.errors?.length ? ` Last pass reported: ${data.loop.last_tick.errors.join("; ")}` : ""}
             </p>
+          </Card>
+
+          <Card className="p-5">
+            <Label>What the agents cost today</Label>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-semibold tabular-nums">${data.spend.today_usd.toFixed(2)}</span>
+              <span className="text-xs text-muted">of a ${data.spend.budget_usd.toFixed(0)} daily limit, after which they pause</span>
+            </div>
+            <ul className="mt-3 space-y-1 text-sm">
+              {data.spend.by_kind.map((k) => (
+                <li key={k.kind} className="flex justify-between gap-3">
+                  <span className="capitalize">{k.kind}</span>
+                  <span className="tabular-nums text-muted">
+                    {k.calls} calls · ${k.usd.toFixed(2)}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </Card>
         </div>
       </div>

@@ -41,7 +41,7 @@ policy names a role that is vacant, say who decides instead according to the pol
 - Write dates and times the way a person would ("Sunday 22 Nov, 11:00 CET"), never as ISO strings.
 - Draft every message needed to execute it. Write to a supplier in the supplier's preferred language, short and \
 specific: order and document numbers, quantities, the time by which you need an answer, and the exact questions. \
-Give an English translation. Sign as "Soony Procurement (AI assistant, on behalf of Soony Interactive GmbH)". \
+Sign as "Soony Procurement (AI assistant, on behalf of Soony Interactive GmbH)". \
 Internal escalations are in English and fit on a phone screen.
 - The case states the gap of this part. A line may also be short because of other parts; those have their own \
 case, so size your recommendation to this part's gap and say so when another part limits the line more.
@@ -49,7 +49,14 @@ case, so size your recommendation to this part's gap and say so when another par
 supplier has set a condition, the next action is whatever meets it; if they declined, find another way. If we \
 have written and the answer time we set has not passed, do not draft another message to that supplier: say that \
 you are waiting and until when.
-- You do not send anything. A human approves each message.
+- Say what each supplier message commits. A message that only asks, informs or reminds commits nothing; it is \
+sent without waiting for a person, so keep it free of any order, acceptance or promise. A message that places, \
+confirms, changes or releases an order, accepts an offer, a price or a condition, or promises anything commits \
+money or terms and waits for the approver you named. Never mix the two: if you need an answer and an order, \
+write two messages.
+- Hand the case to a person when you cannot responsibly take it further: no route is left that reaches the dock \
+in time, the facts contradict each other, the supplier declined and nothing else is evidenced, or the choice is a \
+judgement only the customer can make. Say in one sentence why, and what the person has to decide.
 
 Finish by calling submit_decision."""
 
@@ -89,8 +96,13 @@ TOOLS = [
          "actions": {"type": "array", "items": {"type": "object", "required": ["type", "to_name", "subject", "body", "purpose"], "properties": {
              "type": {"type": "string", "enum": ["email_supplier", "internal_escalation"]},
              "to_name": {"type": "string"}, "to_email": {"type": ["string", "null"]},
-             "language": {"type": ["string", "null"]}, "subject": {"type": "string"}, "body": {"type": "string"},
-             "body_english": {"type": ["string", "null"]}, "purpose": {"type": "string"}}}},
+             "language": {"type": ["string", "null"], "description": "ISO 639-1 code of the language the body is written in"},
+             "subject": {"type": "string"}, "body": {"type": "string"}, "purpose": {"type": "string"},
+             "commits": {"type": "string", "enum": ["nothing", "money_or_terms"],
+                         "description": "nothing: only asks, informs or reminds. money_or_terms: places, confirms, changes "
+                                        "or releases an order, accepts an offer, price or condition, or promises anything."}}}},
+         "handover": {"type": ["string", "null"], "description": "Only if a person must take this case over: why, and what "
+                      "they have to decide. Otherwise null."},
          "ruled_out": {"type": "array", "items": {"type": "string"}},
          "open_questions": {"type": "array", "items": {"type": "string"}},
          "evidence": {"type": "array", "items": {"type": "string"}, "description": "Paths of the files this rests on"}}}},
@@ -266,7 +278,33 @@ def build_brief(conn: sqlite3.Connection, material_id: str, assessment: Assessme
 
 
 def basis_of(brief: dict) -> str:
-    return hashlib.sha256(json.dumps(brief, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
+    """A fingerprint of what matters for the decision. Working a case costs money, so a case is only worked again
+    when something material changed: a finding, a message, which line it stops, or the gap by more than a tenth."""
+    part = brief.get("this_part") or {}
+    material = {
+        "findings": sorted(f["title"] for f in brief["findings"]),
+        "mail": [(m["direction"], m["at"], m["subject"]) for m in brief["correspondence_so_far"]],
+        "lines": [(l["product_id"], l["copies_short_if_nobody_acts"] > 0, l["stopped_by"]) for l in brief["lines_using_this_part"]],
+        "gap_in_tenths_of_need": round(10 * (part.get("gap") or 0) / max(1, part.get("need") or 1)),
+        "confirmed": bool(part.get("confirmed_by_supplier")),
+        "priority": brief["priority_rule"].get("order"),
+    }
+    return hashlib.sha256(json.dumps(material, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
+
+
+def to_english(texts: list[str]) -> list[str]:
+    """Translations for the person who approves. Done by the small model: it is a tenth of the price of having
+    the decision agent write every message twice."""
+    if not texts:
+        return []
+    answer = llm.extract(
+        [{"role": "user", "content": "Translate each message into English, faithfully and completely. Keep numbers, "
+          f"ids, names and line breaks exactly.\n\n{json.dumps(texts, ensure_ascii=False)}"}],
+        "translations", "The translations, in the same order.",
+        {"type": "object", "required": ["english"], "properties": {"english": {"type": "array", "items": {"type": "string"}}}},
+        purpose="translate")
+    english = answer.get("english") or []
+    return english if len(english) == len(texts) else [""] * len(texts)
 
 
 def run_case(conn: sqlite3.Connection, material_id: str, now: datetime | None = None) -> dict:
@@ -287,7 +325,7 @@ def run_case(conn: sqlite3.Connection, material_id: str, now: datetime | None = 
     tools = [{"type": "function", "function": t} for t in TOOLS]
     trace, decision = [], None
     for _ in range(MAX_STEPS):
-        reply = llm.chat(messages, tools)
+        reply = llm.chat(messages, tools, purpose=f"case:{material_id}")
         messages.append(reply)
         calls = reply.get("tool_calls") or []
         if not calls:
@@ -311,21 +349,47 @@ def run_case(conn: sqlite3.Connection, material_id: str, now: datetime | None = 
 
     known = {r["path"] for r in conn.execute("SELECT path FROM files WHERE removed_at IS NULL")}
     decision["checks"] = check_decision(decision, known, box.contacts())
+    actions = decision.get("actions") or []
+    foreign = [a for a in actions if a["type"] == "email_supplier" and (a.get("language") or "en").lower()[:2] != "en"]
+    try:
+        for action, english in zip(foreign, to_english([f"{a['subject']}\n\n{a['body']}" for a in foreign])):
+            action["body_english"] = english or None
+    except Exception as e:  # a missing translation must not lose the decision
+        log.warning("translation failed: %s", e)
+    save_case(conn, material_id, basis, decision, trace)
+    return {"key": f"part:{material_id}", "decision": decision, "trace": trace}
+
+
+def save_case(conn: sqlite3.Connection, material_id: str, basis: str, decision: dict, trace: list,
+              needs_human: str | None = None) -> None:
     key, now = f"part:{material_id}", _now()
+    needs_human = needs_human or decision.get("handover") or None
     conn.execute(
-        """INSERT INTO cases (key, material_id, status, basis, decision, trace, created_at, updated_at)
-           VALUES (?, ?, 'proposed', ?, ?, ?, ?, ?)
+        """INSERT INTO cases (key, material_id, status, basis, decision, trace, needs_human, created_at, updated_at)
+           VALUES (?, ?, 'proposed', ?, ?, ?, ?, ?, ?)
            ON CONFLICT(key) DO UPDATE SET status = 'proposed', basis = excluded.basis, decision = excluded.decision,
-               trace = excluded.trace, updated_at = excluded.updated_at""",
-        (key, material_id, basis, json.dumps(decision, ensure_ascii=False), json.dumps(trace, ensure_ascii=False), now, now))
+               trace = excluded.trace, needs_human = excluded.needs_human, updated_at = excluded.updated_at""",
+        (key, material_id, basis, json.dumps(decision, ensure_ascii=False), json.dumps(trace, ensure_ascii=False),
+         needs_human, now, now))
     conn.execute("DELETE FROM messages WHERE case_key = ? AND gmail_id IS NULL", (key,))  # unsent drafts are replaced
     for action in decision.get("actions") or []:
+        supplier_mail = action["type"] == "email_supplier"
         conn.execute(
             """INSERT INTO messages (case_key, direction, status, counterpart_name, counterpart_email, language, subject,
-                                     body, body_english, purpose, created_at)
-               VALUES (?, 'out', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (key, "blocked" if action.get("blocked") else ("draft" if action["type"] == "email_supplier" else "internal"),
+                                     body, body_english, purpose, commits, created_at)
+               VALUES (?, 'out', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (key, "blocked" if action.get("blocked") else ("draft" if supplier_mail else "internal"),
              action.get("to_name"), action.get("to_email"), action.get("language"), action.get("subject"),
-             action.get("body"), action.get("body_english"), action.get("purpose"), now))
+             action.get("body"), action.get("body_english"), action.get("purpose"),
+             # A message without a clear label is treated as a commitment: when in doubt, a person decides.
+             (action.get("commits") if action.get("commits") in ("nothing", "money_or_terms") else "money_or_terms")
+             if supplier_mail else None, now))
     conn.commit()
-    return {"key": key, "decision": decision, "trace": trace}
+
+
+def hand_over(conn: sqlite3.Connection, material_id: str, basis: str, reason: str) -> None:
+    """The agent could not work the case; a person takes it from here. What was decided before stays visible."""
+    row = conn.execute("SELECT decision, trace FROM cases WHERE material_id = ?", (material_id,)).fetchone()
+    decision = json.loads(row["decision"]) if row and row["decision"] else {"summary": None, "options": [], "actions": []}
+    decision["actions"] = []  # drafts written before the failure are not offered for sending
+    save_case(conn, material_id, basis, decision, json.loads(row["trace"]) if row and row["trace"] else [], needs_human=reason)

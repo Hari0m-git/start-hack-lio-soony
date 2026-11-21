@@ -8,6 +8,7 @@ import json
 import logging
 import sqlite3
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Callable
 
 from app import llm
@@ -46,11 +47,24 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def parse_when(value: str | None) -> datetime | None:
+    """A point in time from either form in use: ISO 8601, or the date header of a mail."""
+    if not value:
+        return None
+    for read in (datetime.fromisoformat, parsedate_to_datetime):
+        try:
+            moment = read(value)
+            return (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 def supplier_contacts(conn: sqlite3.Connection) -> dict[str, dict]:
     return {s["contact_email"].lower(): s for s in load(conn, "supplier") if s.get("contact_email")}
 
 
-def send_draft(conn: sqlite3.Connection, mailbox: Mailbox, message_id: int) -> dict:
+def send_draft(conn: sqlite3.Connection, mailbox: Mailbox, message_id: int, sent_by: str = "human") -> dict:
     """Send one approved draft. Only a draft, only once, only to a supplier contact from the data."""
     row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
     if not row or row["direction"] != "out" or row["status"] != "draft":
@@ -60,9 +74,10 @@ def send_draft(conn: sqlite3.Connection, mailbox: Mailbox, message_id: int) -> d
         (row["case_key"], row["counterpart_email"])).fetchone()
     reply_to = mailbox.get(earlier["gmail_id"]) if earlier else None
     sent = mailbox.send(row["counterpart_email"], row["subject"], row["body"], allowed=set(supplier_contacts(conn)),
-                        reply_to=reply_to, case=row["case_key"])
-    conn.execute("UPDATE messages SET status = 'sent', gmail_id = ?, thread_id = ?, message_id = ?, sent_at = ? WHERE id = ?",
-                 (sent["id"], sent["thread_id"], sent["message_id"], _now(), message_id))
+                        reply_to=reply_to, case=row["case_key"], sent_by=sent_by)
+    conn.execute("UPDATE messages SET status = 'sent', gmail_id = ?, thread_id = ?, message_id = ?, sent_at = ?, "
+                 "sent_by = ?, held_because = NULL WHERE id = ?",
+                 (sent["id"], sent["thread_id"], sent["message_id"], _now(), sent_by, message_id))
     conn.execute("UPDATE cases SET status = 'waiting_for_supplier', updated_at = ? WHERE key = ?", (_now(), row["case_key"]))
     conn.commit()
     return sent
@@ -76,8 +91,9 @@ def read_reply(ours: str, reply: Message, attachments: list[dict]) -> dict:
         f"Our message:\n{ours}\n\nThe supplier's reply ({reply.date}):\nSubject: {reply.subject}\n{reply.body}\n\n"
         f"What the attachments say:\n{json.dumps(attachments, ensure_ascii=False)}"
     )
+    # The strong model: a misread promise would put goods into the forecast that are not coming.
     return llm.extract([{"role": "user", "content": prompt}], "record_reply", "Record the supplier's reply.",
-                       REPLY_SCHEMA, model=llm.AGENT_MODEL)
+                       REPLY_SCHEMA, model=llm.AGENT_MODEL, purpose="reply")
 
 
 def _case_for(conn: sqlite3.Connection, msg: Message, counterpart: str) -> str:
@@ -127,11 +143,12 @@ def sync_mailbox(conn: sqlite3.Connection, mailbox: Mailbox,
             reading = reader((ours["body_english"] or ours["body"]) if ours else "", msg, attached)
         cur = conn.execute(
             """INSERT INTO messages (case_key, direction, status, counterpart_name, counterpart_email, subject, body,
-                                     gmail_id, thread_id, message_id, created_at, sent_at, reading)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                     gmail_id, thread_id, message_id, created_at, sent_at, reading, sent_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (case, "out" if outgoing else "in", "sent" if outgoing else "received", contacts[counterpart].get("contact_name"),
-             counterpart, msg.subject, msg.body, msg.id, msg.thread_id, msg.message_id, _now(), msg.date,
-             json.dumps(reading, ensure_ascii=False) if reading else None))
+             counterpart, msg.subject, msg.body, msg.id, msg.thread_id, msg.message_id, _now(),
+             (parse_when(msg.date) or datetime.now(timezone.utc)).isoformat(timespec="seconds"),
+             json.dumps(reading, ensure_ascii=False) if reading else None, (msg.sent_by or None) if outgoing else None))
         if reading:
             for d in reading.get("deliveries") or []:
                 if d.get("dock_at") and d.get("quantity"):

@@ -3,25 +3,31 @@
 import json
 import sqlite3
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.agent import priority_order
 from app.forecast import simulate
-from app.pipeline import INFORMATIONAL
+from app.outbox import parse_when
+from app.pipeline import DAILY_BUDGET_USD, INFORMATIONAL
 from app.truth import Facts, assess
 
 
 def _messages(conn: sqlite3.Connection, case_key: str) -> list[dict]:
-    rows = conn.execute("SELECT * FROM messages WHERE case_key = ? ORDER BY COALESCE(sent_at, created_at), id", (case_key,))
+    rows = conn.execute("SELECT * FROM messages WHERE case_key = ? ORDER BY id", (case_key,)).fetchall()
+    epoch = datetime.min.replace(tzinfo=timezone.utc)
+    rows.sort(key=lambda r: (parse_when(r["sent_at"] or r["created_at"]) or epoch, r["id"]))
     return [{**{k: r[k] for k in ("id", "direction", "status", "counterpart_name", "counterpart_email", "language",
-                                  "subject", "body", "body_english", "purpose", "created_at", "sent_at")},
+                                  "subject", "body", "body_english", "purpose", "created_at", "sent_at", "commits",
+                                  "sent_by", "held_because")},
              "reading": json.loads(r["reading"]) if r["reading"] else None} for r in rows]
 
 
-def case_state(messages: list[dict]) -> str:
+def case_state(messages: list[dict], needs_human: str | None = None) -> str:
     """Where a case stands, told from its correspondence rather than stored."""
     mail = [m for m in messages if m["status"] in ("sent", "received")]
-    if any(m["status"] == "draft" for m in messages):
+    if needs_human:
+        return "needs_human"
+    if any(m["status"] == "draft" and (m["commits"] != "nothing" or m["held_because"]) for m in messages):
         return "needs_approval"
     if mail and mail[-1]["direction"] == "in":
         return "supplier_answered"
@@ -35,10 +41,13 @@ def _case(conn: sqlite3.Connection, row: sqlite3.Row, facts: Facts) -> dict:
     messages = _messages(conn, row["key"])
     options = decision.get("options") or []
     pick = decision.get("recommended_option", 0)
+    spend = conn.execute("SELECT COALESCE(SUM(cost_usd), 0) AS usd, COUNT(*) AS calls FROM llm_usage WHERE purpose = ?",
+                         (f"case:{row['material_id']}",)).fetchone()
     return {
         "key": row["key"], "material_id": row["material_id"],
         "description": (facts.components.get(row["material_id"]) or {}).get("description"),
-        "state": case_state(messages), "updated_at": row["updated_at"],
+        "state": case_state(messages, row["needs_human"]), "needs_human": row["needs_human"],
+        "updated_at": row["updated_at"], "cost_usd": round(spend["usd"], 2),
         "summary": decision.get("summary"), "why": decision.get("why"),
         "recommended": options[pick] if 0 <= pick < len(options) else None,
         "options": options, "recommended_option": pick, "ruled_out": decision.get("ruled_out") or [],
@@ -78,4 +87,16 @@ def overview(conn: sqlite3.Connection, now: datetime) -> dict:
         "files": conn.execute("SELECT COUNT(*) FROM files WHERE removed_at IS NULL").fetchone()[0],
         "documents_read": conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0],
         "needs_review": [dict(r) for r in review],
+        "spend": spend(conn, now),
     }
+
+
+def spend(conn: sqlite3.Connection, now: datetime) -> dict:
+    """What the agents have cost today, by kind of work."""
+    start = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
+    kinds = {"reading files": "purpose IN ('record_document', 'map_columns')", "working cases": "purpose LIKE 'case:%'",
+             "reading replies": "purpose = 'reply'", "translations and checks": "purpose IN ('translate', 'guard', 'set_priority')"}
+    by_kind = {name: conn.execute(f"SELECT COALESCE(SUM(cost_usd), 0), COUNT(*) FROM llm_usage WHERE ts >= ? AND {where}",
+                                  (start,)).fetchone() for name, where in kinds.items()}
+    return {"today_usd": round(sum(v[0] for v in by_kind.values()), 2), "budget_usd": DAILY_BUDGET_USD,
+            "by_kind": [{"kind": k, "usd": round(v[0], 2), "calls": v[1]} for k, v in by_kind.items()]}

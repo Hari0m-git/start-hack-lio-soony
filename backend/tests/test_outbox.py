@@ -17,13 +17,14 @@ class FakeMailbox:
     def __init__(self):
         self.sent, self.store = [], {}
 
-    def send(self, to, subject, body, allowed, reply_to=None, case=""):
+    def send(self, to, subject, body, allowed, reply_to=None, case="", sent_by=""):
         if to.lower() not in allowed:
             raise RecipientNotAllowed(to)
         n = len(self.sent) + 1
         self.sent.append({"to": to, "subject": subject, "body": body, "reply_to": reply_to, "case": case})
         thread = reply_to.thread_id if reply_to else f"t{n}"
-        self.store[f"g{n}"] = Message(f"g{n}", thread, US, to, subject, "now", f"<m{n}>", "", "", body, case=case)
+        self.store[f"g{n}"] = Message(f"g{n}", thread, US, to, subject, "now", f"<m{n}>", "", "", body, case=case,
+                                      sent_by=sent_by)
         return {"id": f"g{n}", "thread_id": thread, "message_id": f"<m{n}>"}
 
     def search(self, query, limit=50):

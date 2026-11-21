@@ -18,6 +18,7 @@ class Settings:
     public_url: str | None
     access_key: str | None
     mail_configured: bool
+    agents_on: bool
 
 
 def get_settings() -> Settings:
@@ -32,4 +33,7 @@ def get_settings() -> Settings:
         access_key=os.environ.get("APP_ACCESS_KEY") or None,
         mail_configured=all(os.environ.get(k) for k in ("MAIL_ADDRESS", "GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET",
                                                         "GMAIL_REFRESH_TOKEN")),
+        # Exactly one running copy may have its agents on: two would each pay for the same work and each
+        # write to the suppliers. So the loop only runs where it is switched on explicitly.
+        agents_on=os.environ.get("AGENTS", "off").lower() in ("on", "true", "1"),
     )

@@ -57,7 +57,14 @@ function Draft({ message, onChanged }: { message: Message; onChanged: () => void
     <div className="rounded-xl border-2 border-accent/30 bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <Label>Draft to supplier · nothing is sent until you approve</Label>
+          <Label>
+            {message.commits === "nothing"
+              ? "Question to supplier · commits nothing"
+              : "Commits money or terms · only goes out when you approve"}
+          </Label>
+          {message.held_because && message.commits === "nothing" && (
+            <div className="mt-1 text-xs text-warn">Not sent automatically: {message.held_because}</div>
+          )}
           <div className="mt-1 text-sm">
             <span className="font-medium">{message.counterpart_name}</span>{" "}
             <span className="text-muted">{message.counterpart_email}</span>
@@ -130,7 +137,9 @@ function Mail({ message }: { message: Message }) {
           </div>
           <div className="truncate text-sm font-medium">{message.subject}</div>
         </div>
-        <Chip tone={ours ? "neutral" : "good"}>{ours ? "Sent" : "Received"}</Chip>
+        <Chip tone={ours ? "neutral" : "good"}>
+          {!ours ? "Received" : message.sent_by === "agent" ? "Sent by the agent" : message.sent_by === "human" ? "Approved and sent" : "Sent"}
+        </Chip>
       </button>
       {r && (
         <div className="mt-3 rounded-lg bg-good-soft/60 p-3 text-sm">
@@ -203,7 +212,14 @@ export function CasePanel({
         </header>
 
         <div className="space-y-6 px-6 py-5">
-          <p className="text-[15px] leading-relaxed">{item.summary}</p>
+          {item.needs_human && (
+            <div className="rounded-xl border-2 border-bad/40 bg-bad-soft p-4 text-sm">
+              <div className="font-semibold text-bad">The agent has handed this case to you</div>
+              <p className="mt-1 text-ink">{item.needs_human}</p>
+              <p className="mt-1 text-muted">Nothing more is sent on this case until a person has decided.</p>
+            </div>
+          )}
+          {item.summary && <p className="text-[15px] leading-relaxed">{item.summary}</p>}
 
           {rec && (
             <div className="rounded-xl bg-accent p-5 text-white">
@@ -338,7 +354,10 @@ export function CasePanel({
           </details>
 
           <div className="flex items-center justify-between border-t border-line pt-4">
-            <span className="text-xs text-muted">Worked at {clock(item.updated_at)}. Reworked automatically when the facts change.</span>
+            <span className="text-xs text-muted">
+              Worked at {clock(item.updated_at)} · ${item.cost_usd.toFixed(2)} of model time on this case so far. Reworked only when the
+              facts change.
+            </span>
             <Button kind="quiet" onClick={rework} disabled={reworking}>
               {reworking ? "Working… about a minute" : "Work this case again"}
             </Button>
