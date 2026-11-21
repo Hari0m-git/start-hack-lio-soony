@@ -1,0 +1,21 @@
+[project]
+name = "soony-backend"
+version = "0.1.0"
+description = "Agents that keep Soony's launch on track"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "python-dotenv>=1.2.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.uv]
+exclude-newer = "2026-11-14T00:00:00Z"
