@@ -148,6 +148,18 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
         />
       </div>
 
+      {data.foreign_mail.length > 0 && (
+        <Card className="border-l-4 border-l-bad p-4 text-sm">
+          <div className="font-semibold text-bad">
+            {data.foreign_mail.length} message{data.foreign_mail.length > 1 ? "s" : ""} left this mailbox that the agents did not send
+          </div>
+          <p className="mt-1 text-muted">
+            Last one to {data.foreign_mail[data.foreign_mail.length - 1].counterpart_name} at {clock(data.foreign_mail[data.foreign_mail.length - 1].sent_at)}. Check who
+            or what else uses the mailbox: suppliers treat every mail from it as coming from Soony.
+          </p>
+        </Card>
+      )}
+
       <HowTo />
 
       <section>

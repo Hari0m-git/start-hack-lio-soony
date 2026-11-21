@@ -264,7 +264,9 @@ def build_brief(conn: sqlite3.Connection, material_id: str, assessment: Assessme
               "spare_hours_before_deadline": round(forecast["hours_available"] - (p["hours_needed"] or 0), 1)}
              for p in forecast.get("products", []) if material_id in
              {c["material_id"] for c in forecast["components"] if p["product_id"] in c["used_in"]}]
-    mail = [{"direction": "we wrote" if m["direction"] == "out" else "supplier answered", "with": m["counterpart_name"],
+    mail = [{"direction": ("supplier answered" if m["direction"] == "in" else "we wrote" if m["sent_by"] != "other" else
+                           "sent from our mailbox by something other than the agents; it does not speak for us"),
+             "with": m["counterpart_name"],
              "at": m["sent_at"], "subject": m["subject"], "text": (m["body_english"] or m["body"] or "")[:3000],
              "what_it_commits_to": json.loads(m["reading"]) if m["reading"] else None}
             for m in conn.execute("SELECT * FROM messages WHERE case_key = ? AND gmail_id IS NOT NULL ORDER BY id",

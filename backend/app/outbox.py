@@ -148,7 +148,9 @@ def sync_mailbox(conn: sqlite3.Connection, mailbox: Mailbox,
             (case, "out" if outgoing else "in", "sent" if outgoing else "received", contacts[counterpart].get("contact_name"),
              counterpart, msg.subject, msg.body, msg.id, msg.thread_id, msg.message_id, _now(),
              (parse_when(msg.date) or datetime.now(timezone.utc)).isoformat(timespec="seconds"),
-             json.dumps(reading, ensure_ascii=False) if reading else None, (msg.sent_by or None) if outgoing else None))
+             json.dumps(reading, ensure_ascii=False) if reading else None,
+             # Mail that left the mailbox without our mark was sent by someone or something else.
+             (msg.sent_by or "other") if outgoing else None))
         if reading:
             for d in reading.get("deliveries") or []:
                 if d.get("dock_at") and d.get("quantity"):

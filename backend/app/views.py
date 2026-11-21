@@ -89,6 +89,8 @@ def overview(conn: sqlite3.Connection, now: datetime) -> dict:
         "needs_review": [dict(r) for r in review],
         "spend": spend(conn, now),
         "activity": activity(conn, facts),
+        "foreign_mail": [dict(r) for r in conn.execute(
+            "SELECT counterpart_name, subject, sent_at FROM messages WHERE direction = 'out' AND sent_by = 'other' ORDER BY id")],
         "agent_work": {
             "sent_by_agents": conn.execute("SELECT COUNT(*) FROM messages WHERE status = 'sent' AND sent_by = 'agent'").fetchone()[0],
             "approved_by_people": conn.execute("SELECT COUNT(*) FROM messages WHERE status = 'sent' AND COALESCE(sent_by, 'human') = 'human'").fetchone()[0],
@@ -114,7 +116,8 @@ def activity(conn: sqlite3.Connection, facts: Facts, limit: int = 40) -> list[di
             items.append({"at": m["sent_at"], "kind": "reply", "case_key": m["case_key"],
                           "text": f"{m['counterpart_name']} answered about {name(m['case_key'])}", "detail": reading.get("summary")})
         else:
-            who = "The agent asked" if m["sent_by"] == "agent" else "You approved a message to"
+            who = ("The agent asked" if m["sent_by"] == "agent" else "Something other than the agents wrote to"
+                   if m["sent_by"] == "other" else "You approved a message to")
             items.append({"at": m["sent_at"], "kind": "sent_by_agent" if m["sent_by"] == "agent" else "sent_by_human",
                           "case_key": m["case_key"], "text": f"{who} {m['counterpart_name']} about {name(m['case_key'])}",
                           "detail": m["subject"]})
