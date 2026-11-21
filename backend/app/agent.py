@@ -363,8 +363,72 @@ def run_case(conn: sqlite3.Connection, material_id: str, now: datetime | None = 
             action["body_english"] = english or None
     except Exception as e:  # a missing translation must not lose the decision
         log.warning("translation failed: %s", e)
+    try:
+        decision["card"] = plain_card(decision, material_id, glossary(conn, box.facts))
+    except Exception as e:  # the card is a convenience; the decision stands without it
+        log.warning("plain-language card failed: %s", e)
     save_case(conn, material_id, basis, decision, trace)
     return {"key": f"part:{material_id}", "decision": decision, "trace": trace}
+
+
+CARD_SCHEMA = {
+    "type": "object", "required": ["headline", "problem", "suggestion", "your_step"],
+    "properties": {
+        "headline": {"type": "string", "description": "The problem in at most nine words, like a newspaper headline"},
+        "problem": {"type": "string", "description": "What is wrong and what it costs: one sentence, at most 30 words"},
+        "suggestion": {"type": "string", "description": "What the agent suggests, with its cost if known: one sentence, "
+                       "at most 30 words"},
+        "your_step": {"type": "string", "description": "What the reader has to do now, starting with a verb: one sentence, "
+                      "at most 20 words. "
+                      "If nothing is needed from them right now, say what they are waiting for."},
+    },
+}
+
+
+def glossary(conn: sqlite3.Connection, facts: Facts) -> dict[str, str]:
+    """Ids and the names people use for them."""
+    names = {pid: p.get("name") for pid, p in facts.products.items()}
+    names.update({cid: c.get("description") for cid, c in facts.components.items()})
+    names.update({l.get("code"): l.get("name") for l in load(conn, "location")})
+    return {k: v for k, v in names.items() if v}
+
+
+def ensure_cards(conn: sqlite3.Connection) -> int:
+    """Give every case that lacks one its plain-language card, e.g. cases worked before cards existed."""
+    names, made = None, 0
+    for row in conn.execute("SELECT key, material_id, decision FROM cases WHERE decision IS NOT NULL").fetchall():
+        decision = json.loads(row["decision"])
+        if decision.get("card") or not decision.get("summary"):
+            continue
+        names = names or glossary(conn, Facts(conn))
+        try:
+            decision["card"] = plain_card(decision, row["material_id"], names)
+        except Exception as e:
+            log.warning("plain-language card failed for %s: %s", row["key"], e)
+            continue
+        conn.execute("UPDATE cases SET decision = ? WHERE key = ?", (json.dumps(decision, ensure_ascii=False), row["key"]))
+        conn.commit()
+        made += 1
+    return made
+
+
+def plain_card(decision: dict, material_id: str, names: dict[str, str]) -> dict:
+    """The case in words a busy person outside procurement understands at a glance. Written by the small model
+    from the finished decision, so it adds nothing the decision does not say."""
+    pick = (decision.get("options") or [{}])[decision.get("recommended_option", 0)] if decision.get("options") else {}
+    facts = {"part": names.get(material_id, material_id), "summary": decision.get("summary"), "recommendation": pick,
+             "why": decision.get("why"),
+             "approval": decision.get("approval"), "handed_to_a_person_because": decision.get("handover"),
+             "messages_prepared": [{"to": a.get("to_name"), "purpose": a.get("purpose"), "commits": a.get("commits")}
+                                   for a in decision.get("actions") or []]}
+    prompt = ("Rewrite this procurement case for a manager with thirty seconds. Plain words, short sentences. Call "
+              "parts, products and sites by their names, never by ids or order numbers; the glossary gives the "
+              "names: use them as given, you may only drop what is in brackets. Leave out shipment, container, batch and document numbers. Say "
+              "'copies' for finished products and 'pieces' for parts. Write "
+              "times like 'Sunday 11:26'. Add nothing that is not in the facts." + chr(10) + chr(10)
+              + f"Glossary: {json.dumps(names, ensure_ascii=False)}" + chr(10) + chr(10) + json.dumps(facts, ensure_ascii=False))
+    return llm.extract([{"role": "user", "content": prompt}], "write_card", "The case in plain words.", CARD_SCHEMA,
+                       purpose="translate")
 
 
 def save_case(conn: sqlite3.Connection, material_id: str, basis: str, decision: dict, trace: list,

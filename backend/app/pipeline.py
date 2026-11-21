@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
-from app.agent import LOCAL, basis_of, build_brief, hand_over, priority_order, run_case
+from app.agent import LOCAL, basis_of, build_brief, ensure_cards, hand_over, priority_order, run_case
 from app.autonomy import send_what_is_safe
 from app.config import Settings
 from app.db import connect
@@ -128,6 +128,7 @@ def tick(settings: Settings, mailbox: Mailbox | None = None, now: datetime | Non
                 hand_over(conn, material_id, due[material_id],
                           f"The agent could not work this case after {MAX_FAILURES} attempts ({error}). Please take it over.")
                 report["handed_over"].append(material_id)
+        ensure_cards(conn)
         if mailbox:
             try:
                 report["sent_automatically"] = send_what_is_safe(conn, mailbox, now)

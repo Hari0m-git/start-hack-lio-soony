@@ -141,8 +141,11 @@ def simulate(conn: sqlite3.Connection, assessment: Assessment, priority: list[st
         for child, per in bom[p].items():
             need[child] += remaining[p] * per
     to_pack, stops, finish, hours = dict(remaining), {}, {}, 0.0
+    timeline = [{"at": start.isoformat(timespec="minutes"), **{p: 0 for p in order}}]
     for begin, end in windows:
         slot = max(begin, start)
+        if slot < end and timeline[-1]["at"] != slot.isoformat(timespec="minutes"):
+            timeline.append({**timeline[-1], "at": slot.isoformat(timespec="minutes")})  # nothing is packed overnight
         while slot < end:
             length = min(STEP, end - slot)
             share = length / STEP
@@ -169,6 +172,7 @@ def simulate(conn: sqlite3.Connection, assessment: Assessment, priority: list[st
                 if remaining[p] <= 0 and p not in finish:
                     finish[p] = (slot + length * (done / (rate[p] * share))).isoformat(timespec="minutes")
             slot += length
+            timeline.append({"at": slot.isoformat(timespec="minutes"), **{p: to_pack[p] - remaining[p] for p in order}})
 
     products = [{
         "product_id": p, "name": facts.products.get(p, {}).get("name"),
@@ -187,7 +191,7 @@ def simulate(conn: sqlite3.Connection, assessment: Assessment, priority: list[st
     return {
         "ready": True, "as_of": start.isoformat(timespec="minutes"), "deadline": deadline.isoformat(timespec="minutes"),
         "hours_available": round(hours, 1), "priority": ranked, "products": products, "components": components,
-        "will_make_it": all(p["short"] <= 0 for p in products),
+        "will_make_it": all(p["short"] <= 0 for p in products), "timeline": timeline,
         "assumptions": [f"Unconfirmed deliveries are counted from {ARRIVAL_HOUR}:00 on their dock date.",
                         "Usable stock is consumed before stock that is blocked.",
                         "Parts shared between editions are reserved for the edition with priority."],

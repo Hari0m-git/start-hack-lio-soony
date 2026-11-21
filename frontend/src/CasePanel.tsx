@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { editDraft, fileUrl, reworkCase, sendMessage, type Case, type Finding, type Message } from "./api";
 import { clock, fileName, money, num, when } from "./format";
 import { Button, Chip, Label, StateChip } from "./ui";
@@ -10,6 +10,18 @@ const TOOL_NAMES: Record<string, string> = {
   policies: "Checked the approval policy and org chart",
   submit_decision: "Wrote the recommendation",
 };
+
+function More({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <details className="group rounded-xl border border-line bg-card">
+      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium">
+        {title}
+        <span className="text-muted transition-transform group-open:rotate-90">›</span>
+      </summary>
+      <div className="border-t border-line px-4 py-3 text-sm leading-relaxed">{children}</div>
+    </details>
+  );
+}
 
 function EvidenceLinks({ paths }: { paths: string[] }) {
   if (!paths.length) return null;
@@ -200,8 +212,10 @@ export function CasePanel({
       <aside className="h-full w-full max-w-2xl overflow-y-auto bg-paper shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-line bg-paper/95 px-6 py-4 backdrop-blur">
           <div>
-            <div className="text-xs text-muted">{item.material_id}</div>
-            <h2 className="text-lg font-semibold leading-tight">{item.description ?? item.material_id}</h2>
+            <div className="text-xs text-muted">
+              {item.description} · {item.material_id}
+            </div>
+            <h2 className="text-lg font-semibold leading-tight">{item.card?.headline ?? item.description ?? item.material_id}</h2>
             <div className="mt-1.5">
               <StateChip state={item.state} />
             </div>
@@ -219,13 +233,16 @@ export function CasePanel({
               <p className="mt-1 text-muted">Nothing more is sent on this case until a person has decided.</p>
             </div>
           )}
-          {item.summary && <p className="text-[15px] leading-relaxed">{item.summary}</p>}
+          <div>
+            <Label>The problem</Label>
+            <p className="mt-1 text-[15px] leading-relaxed">{item.card?.problem ?? item.summary}</p>
+          </div>
 
           {rec && (
             <div className="rounded-xl bg-accent p-5 text-white">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/70">Recommendation</div>
-              <div className="mt-1 text-lg font-semibold leading-snug">{rec.title}</div>
-              <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/70">The agent suggests</div>
+              <div className="mt-1 text-[17px] font-semibold leading-snug">{item.card?.suggestion ?? rec.title}</div>
+              <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
                 <div>
                   <div className="text-white/60">Saves</div>
                   <div className="text-base font-semibold">{num(rec.copies_saved)} copies</div>
@@ -239,20 +256,18 @@ export function CasePanel({
                   <div className="text-base font-semibold">{rec.arrives_by ? when(rec.arrives_by) : "to be confirmed"}</div>
                 </div>
               </div>
-              <p className="mt-3 text-sm leading-relaxed text-white/85">{item.why}</p>
-              {rec.risks && <p className="mt-2 text-sm text-white/70">Risk: {rec.risks}</p>}
+              {item.approval && (
+                <p className="mt-4 border-t border-white/20 pt-3 text-sm text-white/85">
+                  Signs: <span className="font-medium text-white">{item.approval.person ?? item.approval.required_role}</span>
+                </p>
+              )}
             </div>
           )}
 
-          {item.approval && (
-            <div>
-              <Label>Who signs</Label>
-              <p className="mt-1 text-sm">
-                <span className="font-medium">{item.approval.person ?? item.approval.required_role}</span>
-                {item.approval.person && <span className="text-muted"> · {item.approval.required_role}</span>}
-              </p>
-              <p className="mt-1 text-sm text-muted">{item.approval.basis}</p>
-              {item.approval.note && <p className="mt-1 text-sm text-muted">{item.approval.note}</p>}
+          {item.card?.your_step && !item.needs_human && (
+            <div className="rounded-lg border border-line bg-card px-4 py-3 text-[15px]">
+              <span className="font-semibold">Your step: </span>
+              {item.card.your_step}
             </div>
           )}
 
@@ -271,33 +286,60 @@ export function CasePanel({
 
           {mail.length > 0 && (
             <div className="space-y-2">
-              <Label>Correspondence</Label>
+              <Label>Conversation with the supplier</Label>
               {mail.map((m) => (
                 <Mail key={m.id} message={m} />
               ))}
             </div>
           )}
 
-          {internal.length > 0 && (
-            <div className="space-y-2">
-              <Label>Notes for Soony's team · prepared, not sent</Label>
-              {internal.map((m) => (
-                <details key={m.id} className="rounded-xl border border-line bg-card p-4">
-                  <summary className="cursor-pointer text-sm">
-                    <span className="font-medium">{m.counterpart_name}</span> <span className="text-muted">· {m.subject}</span>
-                  </summary>
-                  <pre className="mt-3 whitespace-pre-wrap font-sans text-sm leading-relaxed text-ink/80">{m.body}</pre>
-                </details>
-              ))}
-            </div>
-          )}
+          <div className="space-y-2">
+            <Label>More detail, if you want it</Label>
 
-          {(others.length > 0 || item.ruled_out.length > 0) && (
-            <details>
-              <summary className="cursor-pointer text-sm font-medium text-muted">What else was considered</summary>
-              <div className="mt-2 space-y-2 text-sm">
+            <More title="Why the agent suggests this">
+              <p>{item.summary}</p>
+              <p className="mt-2">{item.why}</p>
+              {rec?.risks && <p className="mt-2 text-muted">Risk: {rec.risks}</p>}
+              {item.approval && (
+                <p className="mt-2 text-muted">
+                  Who signs, and why: {item.approval.basis} {item.approval.note}
+                </p>
+              )}
+              {item.open_questions.map((q) => (
+                <p key={q} className="mt-2 text-muted">
+                  Still open: {q}
+                </p>
+              ))}
+            </More>
+
+            <More title={`The proof (${proof.length} original files)`}>
+              {findings.map((f) => (
+                <div key={f.key} className="mb-2">
+                  <div className="font-medium">{f.title}</div>
+                  <div className="text-muted">{f.detail}</div>
+                </div>
+              ))}
+              <EvidenceLinks paths={proof} />
+            </More>
+
+            {internal.length > 0 && (
+              <More title={`Notes prepared for Soony's team (${internal.length})`}>
+                <p className="mb-2 text-muted">Ready to forward. The agents have no channel to Soony's staff, so these are not sent.</p>
+                {internal.map((m) => (
+                  <div key={m.id} className="mb-3 rounded-lg border border-line bg-paper p-3">
+                    <div>
+                      <span className="font-medium">{m.counterpart_name}</span> <span className="text-muted">· {m.subject}</span>
+                    </div>
+                    <pre className="mt-2 whitespace-pre-wrap font-sans leading-relaxed text-ink/80">{m.body}</pre>
+                  </div>
+                ))}
+              </More>
+            )}
+
+            {(others.length > 0 || item.ruled_out.length > 0) && (
+              <More title="What else was considered">
                 {others.map((o) => (
-                  <div key={o.title} className="rounded-lg border border-line bg-card p-3">
+                  <div key={o.title} className="mb-2 rounded-lg border border-line bg-paper p-3">
                     <div className="font-medium">{o.title}</div>
                     <div className="text-muted">
                       Saves {num(o.copies_saved)} · {money(o.cost, o.currency)}
@@ -310,48 +352,23 @@ export function CasePanel({
                     • {r}
                   </div>
                 ))}
-              </div>
-            </details>
-          )}
+              </More>
+            )}
 
-          {item.open_questions.length > 0 && (
-            <div>
-              <Label>Still open</Label>
-              {item.open_questions.map((q) => (
-                <p key={q} className="mt-1 text-sm">
-                  • {q}
-                </p>
-              ))}
-            </div>
-          )}
-
-          <div>
-            <Label>Evidence · opens the original file</Label>
-            <div className="mt-2 space-y-2">
-              {findings.map((f) => (
-                <div key={f.key} className="text-sm">
-                  <div className="font-medium">{f.title}</div>
-                  <div className="text-muted">{f.detail}</div>
-                </div>
-              ))}
-              <EvidenceLinks paths={proof} />
-            </div>
+            <More title={`How the agent worked (${item.trace.length} steps)`}>
+              <ol className="space-y-1 text-muted">
+                {item.trace.map((t, i) => {
+                  const args = Object.values(t.args ?? {}).flat().join(", ");
+                  return (
+                    <li key={i}>
+                      {i + 1}. {TOOL_NAMES[t.tool] ?? t.tool}
+                      {args && <span className="text-ink/60"> · {args}</span>}
+                    </li>
+                  );
+                })}
+              </ol>
+            </More>
           </div>
-
-          <details>
-            <summary className="cursor-pointer text-sm font-medium text-muted">How the agent got here ({item.trace.length} steps)</summary>
-            <ol className="mt-2 space-y-1 text-sm text-muted">
-              {item.trace.map((t, i) => {
-                const args = Object.values(t.args ?? {}).flat().join(", ");
-                return (
-                  <li key={i}>
-                    {i + 1}. {TOOL_NAMES[t.tool] ?? t.tool}
-                    {args && <span className="text-ink/60"> · {args}</span>}
-                  </li>
-                );
-              })}
-            </ol>
-          </details>
 
           <div className="flex items-center justify-between border-t border-line pt-4">
             <span className="text-xs text-muted">

@@ -34,6 +34,7 @@ export type Forecast = {
   deadline: string;
   hours_available: number;
   will_make_it: boolean;
+  timeline: ({ at: string } & Record<string, number | string>)[];
   products: ProductForecast[];
   components: ComponentForecast[];
   assumptions: string[];
@@ -101,6 +102,7 @@ export type Case = {
   state: CaseState;
   needs_human: string | null;
   cost_usd: number;
+  card: { headline: string; problem: string; suggestion: string; your_step: string } | null;
   updated_at: string;
   summary: string | null;
   why: string | null;
@@ -130,7 +132,9 @@ export type Overview = {
   documents_read: number;
   needs_review: { path: string; detail: string }[];
   spend: { today_usd: number; budget_usd: number; by_kind: { kind: string; usd: number; calls: number }[] };
-  loop: { last_tick: { at: string; errors: string[] } | null; running: boolean };
+  activity: { at: string | null; kind: "files" | "reply" | "sent_by_agent" | "sent_by_human" | "handover"; case_key: string | null; text: string; detail: string | null }[];
+  agent_work: { sent_by_agents: number; approved_by_people: number; replies: number; findings: number };
+  loop: { last_tick: { at: string; errors: string[] } | null; running: boolean; agents_on: boolean };
   mail_address: string | null;
 };
 

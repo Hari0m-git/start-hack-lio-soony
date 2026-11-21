@@ -47,7 +47,7 @@ def _case(conn: sqlite3.Connection, row: sqlite3.Row, facts: Facts) -> dict:
         "key": row["key"], "material_id": row["material_id"],
         "description": (facts.components.get(row["material_id"]) or {}).get("description"),
         "state": case_state(messages, row["needs_human"]), "needs_human": row["needs_human"],
-        "updated_at": row["updated_at"], "cost_usd": round(spend["usd"], 2),
+        "updated_at": row["updated_at"], "cost_usd": round(spend["usd"], 2), "card": decision.get("card"),
         "summary": decision.get("summary"), "why": decision.get("why"),
         "recommended": options[pick] if 0 <= pick < len(options) else None,
         "options": options, "recommended_option": pick, "ruled_out": decision.get("ruled_out") or [],
@@ -88,7 +88,45 @@ def overview(conn: sqlite3.Connection, now: datetime) -> dict:
         "documents_read": conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0],
         "needs_review": [dict(r) for r in review],
         "spend": spend(conn, now),
+        "activity": activity(conn, facts),
+        "agent_work": {
+            "sent_by_agents": conn.execute("SELECT COUNT(*) FROM messages WHERE status = 'sent' AND sent_by = 'agent'").fetchone()[0],
+            "approved_by_people": conn.execute("SELECT COUNT(*) FROM messages WHERE status = 'sent' AND COALESCE(sent_by, 'human') = 'human'").fetchone()[0],
+            "replies": conn.execute("SELECT COUNT(*) FROM messages WHERE status = 'received'").fetchone()[0],
+            "findings": sum(f["level"] != "info" for f in findings),
+        },
     }
+
+
+def activity(conn: sqlite3.Connection, facts: Facts, limit: int = 40) -> list[dict]:
+    """What happened, newest first, in one list: files arriving, mail going out and coming in, cases handed over."""
+    name = lambda key: (facts.components.get((key or "").removeprefix("part:")) or {}).get("description") or key
+    items = []
+    for r in conn.execute("SELECT run_id, MIN(ts) AS ts, COUNT(*) AS n, GROUP_CONCAT(path, '|') AS paths FROM file_events "
+                          "WHERE baseline = 0 GROUP BY run_id"):
+        files = [p.rsplit("/", 1)[-1] for p in r["paths"].split("|")]
+        items.append({"at": r["ts"], "kind": "files", "case_key": None,
+                      "text": f"{r['n']} new or changed file{'s' if r['n'] > 1 else ''} arrived and {'were' if r['n'] > 1 else 'was'} read",
+                      "detail": ", ".join(files[:6]) + ("…" if len(files) > 6 else "")})
+    for m in conn.execute("SELECT * FROM messages WHERE status IN ('sent', 'received')"):
+        if m["status"] == "received":
+            reading = json.loads(m["reading"]) if m["reading"] else {}
+            items.append({"at": m["sent_at"], "kind": "reply", "case_key": m["case_key"],
+                          "text": f"{m['counterpart_name']} answered about {name(m['case_key'])}", "detail": reading.get("summary")})
+        else:
+            who = "The agent asked" if m["sent_by"] == "agent" else "You approved a message to"
+            items.append({"at": m["sent_at"], "kind": "sent_by_agent" if m["sent_by"] == "agent" else "sent_by_human",
+                          "case_key": m["case_key"], "text": f"{who} {m['counterpart_name']} about {name(m['case_key'])}",
+                          "detail": m["subject"]})
+    for c in conn.execute("SELECT key, needs_human, updated_at FROM cases WHERE needs_human IS NOT NULL"):
+        items.append({"at": c["updated_at"], "kind": "handover", "case_key": c["key"],
+                      "text": f"The agent handed {name(c['key'])} to a person", "detail": c["needs_human"]})
+    epoch = datetime.min.replace(tzinfo=timezone.utc)
+    items.sort(key=lambda i: parse_when(i["at"]) or epoch, reverse=True)
+    for i in items:
+        moment = parse_when(i["at"])
+        i["at"] = moment.isoformat(timespec="seconds") if moment else None
+    return items[:limit]
 
 
 def spend(conn: sqlite3.Connection, now: datetime) -> dict:
