@@ -83,6 +83,13 @@ DOC_SCHEMA = {
             "type": "object", "required": ["day"], "properties": {
                 "day": {"type": "string", "description": "ISO date if it can be told, else the weekday"},
                 "start": {**_str, "description": "HH:MM"}, "end": {**_str, "description": "HH:MM"}, "lines": _str}}},
+        "holds": {"type": "array", "description": "Stock or lots the document says failed inspection, are blocked, "
+                  "or may be used only under a condition", "items": {
+            "type": "object", "required": ["material_id", "reason"], "properties": {
+                "material_id": _str, "gr_number": {**_str, "description": "Goods receipt number of the lot"},
+                "lot": _str, "quantity": _num, "reason": {"type": "string"},
+                "release_condition": {**_str, "description": "What has to happen before the lot may be used"},
+                "quote": {**_str, "description": "The passage, word for word"}}}},
         "facts": {"type": "array", "description": "Every other statement that someone could act on", "items": {
             "type": "object", "required": ["kind", "subject", "statement", "quote"], "properties": {
                 "kind": {"type": "string", "enum": FACT_KINDS},
@@ -101,7 +108,8 @@ PROMPT = (
     "says and nothing it does not say. Copy ids, numbers and dates exactly. Where a printed quantity was struck out "
     "and corrected by hand, record both. Write summaries and statements in English and quote the original wording. "
     "Leave out sections that do not apply. Numbers written with a dot or space as thousands separator are whole "
-    "numbers."
+    "numbers. When a document says a lot failed inspection, is blocked, or may be used only under a condition, "
+    "record that under holds as well, with the goods receipt or lot number it names."
 )
 
 QUANTITY_KEYS = ("qty_ordered", "qty_printed", "qty_handwritten", "qty_final")
@@ -214,7 +222,7 @@ def normalise(doc: dict, path: str) -> tuple[dict, list[str]]:
 
     doc = clean_dates(doc, ("doc_date", "as_of"), "document")
     for section, keys in (("lines", ("date",)), ("shipments", ("etd", "eta")), ("pack_status", ()),
-                          ("shifts", ()), ("facts", ("valid_from", "valid_to"))):
+                          ("shifts", ()), ("holds", ()), ("facts", ("valid_from", "valid_to"))):
         items = doc.get(section) or []
         doc[section] = [clean_dates(i, keys, section) for i in items if isinstance(i, dict)]
     for line in doc["lines"]:
@@ -235,7 +243,7 @@ def normalise(doc: dict, path: str) -> tuple[dict, list[str]]:
 
 
 SECTIONS = {"lines": "doc_line", "shipments": "doc_shipment", "pack_status": "doc_pack_status",
-            "shifts": "doc_shift", "facts": "doc_fact"}
+            "shifts": "doc_shift", "holds": "doc_hold", "facts": "doc_fact"}
 CONTEXT_KEYS = ("doc_type", "supplier_id", "doc_date", "document_no", "po_numbers", "as_of")
 
 
