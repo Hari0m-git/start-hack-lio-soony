@@ -63,6 +63,39 @@ CREATE TABLE IF NOT EXISTS documents (
     summary TEXT,
     data TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cases (
+    key TEXT PRIMARY KEY,
+    material_id TEXT,
+    status TEXT NOT NULL,
+    basis TEXT NOT NULL,
+    decision TEXT,
+    trace TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_key TEXT NOT NULL,
+    direction TEXT NOT NULL CHECK (direction IN ('out', 'in')),
+    status TEXT NOT NULL,
+    counterpart_name TEXT,
+    counterpart_email TEXT,
+    language TEXT,
+    subject TEXT,
+    body TEXT,
+    body_english TEXT,
+    purpose TEXT,
+    gmail_id TEXT,
+    thread_id TEXT,
+    message_id TEXT,
+    created_at TEXT NOT NULL,
+    sent_at TEXT
+);
 CREATE TABLE IF NOT EXISTS ingest_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts TEXT NOT NULL,

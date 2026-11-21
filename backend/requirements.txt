@@ -56,5 +56,7 @@ typing-inspection==0.4.5
     # via
     #   fastapi
     #   pydantic
+tzdata==2026.6
+    # via soony-backend
 uvicorn==0.54.0
     # via soony-backend
