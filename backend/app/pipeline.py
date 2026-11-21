@@ -6,6 +6,7 @@
 Each step is safe to repeat; nothing here sends a message.
 """
 
+import json
 import logging
 import os
 import sqlite3
@@ -29,6 +30,7 @@ CASE_WORKERS = 4
 WAIT = timedelta(minutes=30)       # how long a supplier gets to answer before the case is looked at again
 GRACE = timedelta(minutes=10)      # how long the slower suppliers get once the first one has answered
 MAX_FAILURES = 2                   # attempts on the same facts before a person takes over
+MAX_RUNS_PER_HOUR = 2              # automatic reworks of one case; a person can still ask for one
 DAILY_BUDGET_USD = float(os.environ.get("DAILY_BUDGET_USD", "25"))
 failures: dict[str, int] = {}
 # Findings that only inform; they never open a case on their own.
@@ -49,7 +51,8 @@ def awaiting_reply(conn: sqlite3.Connection, material_id: str, now: datetime) ->
     and a short GRACE for the others once the first of several suppliers has, so one round is worked once."""
     last = {}  # per contact: the latest message
     for m in conn.execute("SELECT counterpart_email, direction, sent_at FROM messages WHERE case_key = ? "
-                          "AND gmail_id IS NOT NULL ORDER BY id", (f"part:{material_id}",)):
+                          "AND gmail_id IS NOT NULL AND COALESCE(sent_by, '') NOT IN ('auto', 'other') ORDER BY id",
+                          (f"part:{material_id}",)):
         last[m["counterpart_email"]] = m
     ages = [now.astimezone(timezone.utc) - sent for m in last.values()
             if m["direction"] == "out" and (sent := parse_when(m["sent_at"]))]
@@ -66,12 +69,17 @@ def due_cases(conn: sqlite3.Connection, now: datetime) -> dict[str, str]:
     forecast = simulate(conn, assessment, priority["order"])
     if not forecast.get("ready"):
         return {}
-    worked = {r["material_id"]: r["basis"] for r in conn.execute("SELECT material_id, basis FROM cases")}
+    worked = {r["material_id"]: r for r in conn.execute("SELECT material_id, basis, runs_log FROM cases")}
+    hour_ago = (now.astimezone(timezone.utc) - timedelta(hours=1)).isoformat(timespec="seconds")
     due = {}
     for m in parts_at_risk(assessment, forecast):
         basis = basis_of(build_brief(conn, m, assessment, priority, forecast))
-        if worked.get(m) != basis and not (m in worked and awaiting_reply(conn, m, now)):
-            due[m] = basis
+        if m in worked:
+            recent = [t for t in json.loads(worked[m]["runs_log"] or "[]") if t >= hour_ago]
+            # A chatty supplier must not turn into a bill: a case is worked at most this often per hour by itself.
+            if worked[m]["basis"] == basis or awaiting_reply(conn, m, now) or len(recent) >= MAX_RUNS_PER_HOUR:
+                continue
+        due[m] = basis
     return due
 
 

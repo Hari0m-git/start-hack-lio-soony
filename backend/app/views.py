@@ -18,13 +18,13 @@ def _messages(conn: sqlite3.Connection, case_key: str) -> list[dict]:
     rows.sort(key=lambda r: (parse_when(r["sent_at"] or r["created_at"]) or epoch, r["id"]))
     return [{**{k: r[k] for k in ("id", "direction", "status", "counterpart_name", "counterpart_email", "language",
                                   "subject", "body", "body_english", "purpose", "created_at", "sent_at", "commits",
-                                  "sent_by", "held_because")},
+                                  "sent_by", "held_because", "approved_by")},
              "reading": json.loads(r["reading"]) if r["reading"] else None} for r in rows]
 
 
 def case_state(messages: list[dict], needs_human: str | None = None) -> str:
     """Where a case stands, told from its correspondence rather than stored."""
-    mail = [m for m in messages if m["status"] in ("sent", "received")]
+    mail = [m for m in messages if m["status"] in ("sent", "received") and m["sent_by"] not in ("auto", "other")]
     if needs_human:
         return "needs_human"
     if any(m["status"] == "draft" and (m["commits"] != "nothing" or m["held_because"]) for m in messages):
@@ -74,6 +74,19 @@ def overview(conn: sqlite3.Connection, now: datetime) -> dict:
     findings.sort(key=lambda f: ("stops_line", "watch", "info").index(f["level"]))
 
     cases = [_case(conn, r, facts) for r in conn.execute("SELECT * FROM cases ORDER BY key")]
+    # What each fix is worth on its own. A line needs every part, so fixes do not simply add up.
+    base = {p["product_id"]: p["short"] for p in evidence.get("products", [])}
+    open_parts = frozenset(c["material_id"] for c in cases)
+    for case in cases:
+        alone = simulate(conn, assessment, priority["order"], covered=frozenset({case["material_id"]}))
+        after = {p["product_id"]: p for p in alone.get("products", [])}
+        case["saves_alone"] = sum(base[p] - after[p]["short"] for p in base if p in after)
+        blockers = {after[p]["first_stop"]["material_id"] for p in after if after[p]["short"] > 0 and after[p]["first_stop"]}
+        case["then_limited_by"] = sorted((facts.components.get(b) or {}).get("description") or b
+                                         for b in blockers & (open_parts - {case["material_id"]}))
+    solved = simulate(conn, assessment, priority["order"], covered=open_parts)
+    plan = {"short_now": sum(base.values()),
+            "short_if_all_solved": sum(p["short"] for p in solved.get("products", [])) if solved.get("ready") else None}
     last_sync = conn.execute("SELECT * FROM sync_runs ORDER BY id DESC LIMIT 1").fetchone()
     drops = conn.execute("SELECT ts, path, kind FROM file_events WHERE baseline = 0 ORDER BY id DESC LIMIT 30").fetchall()
     review = conn.execute(
@@ -82,7 +95,7 @@ def overview(conn: sqlite3.Connection, now: datetime) -> dict:
     return {
         "now": now.isoformat(timespec="minutes"),
         "forecast": evidence, "erp_forecast": erp, "forecast_if_acted": acted, "priority": priority,
-        "findings": findings, "cases": cases,
+        "findings": findings, "cases": cases, "plan": plan,
         "drops": [dict(d) for d in drops], "last_sync": dict(last_sync) if last_sync else None,
         "files": conn.execute("SELECT COUNT(*) FROM files WHERE removed_at IS NULL").fetchone()[0],
         "documents_read": conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0],
@@ -94,7 +107,7 @@ def overview(conn: sqlite3.Connection, now: datetime) -> dict:
         "agent_work": {
             "sent_by_agents": conn.execute("SELECT COUNT(*) FROM messages WHERE status = 'sent' AND sent_by = 'agent'").fetchone()[0],
             "approved_by_people": conn.execute("SELECT COUNT(*) FROM messages WHERE status = 'sent' AND COALESCE(sent_by, 'human') = 'human'").fetchone()[0],
-            "replies": conn.execute("SELECT COUNT(*) FROM messages WHERE status = 'received'").fetchone()[0],
+            "replies": conn.execute("SELECT COUNT(*) FROM messages WHERE status = 'received' AND COALESCE(sent_by, '') != 'auto'").fetchone()[0],
             "findings": sum(f["level"] != "info" for f in findings),
         },
     }
@@ -113,8 +126,9 @@ def activity(conn: sqlite3.Connection, facts: Facts, limit: int = 40) -> list[di
     for m in conn.execute("SELECT * FROM messages WHERE status IN ('sent', 'received')"):
         if m["status"] == "received":
             reading = json.loads(m["reading"]) if m["reading"] else {}
+            said = "sent an automatic reply about" if m["sent_by"] == "auto" else "answered about"
             items.append({"at": m["sent_at"], "kind": "reply", "case_key": m["case_key"],
-                          "text": f"{m['counterpart_name']} answered about {name(m['case_key'])}", "detail": reading.get("summary")})
+                          "text": f"{m['counterpart_name']} {said} {name(m['case_key'])}", "detail": reading.get("summary")})
         else:
             who = ("The agent asked" if m["sent_by"] == "agent" else "Something other than the agents wrote to"
                    if m["sent_by"] == "other" else "You approved a message to")

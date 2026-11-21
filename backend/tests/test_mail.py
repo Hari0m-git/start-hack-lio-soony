@@ -75,6 +75,13 @@ def test_parses_sender_body_and_attachments():
                                 "attachment_id": "att1", "size": 1234}]
 
 
+def test_automatic_replies_are_recognised_by_their_headers():
+    assert parse_message(gmail_message()).automatic is False
+    raw = gmail_message()
+    raw["payload"]["headers"].append({"name": "Auto-Submitted", "value": "auto-replied"})
+    assert parse_message(raw).automatic is True
+
+
 def test_html_only_mail_is_reduced_to_its_text():
     raw = gmail_message()
     raw["payload"] = {"mimeType": "text/html", "headers": [], "body": {"data": b64("<div>Ja, <b>bestätigt</b>.</div>")}}

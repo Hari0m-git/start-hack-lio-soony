@@ -39,6 +39,7 @@ class Message:
     attachments: list[dict] = field(default_factory=list)
     case: str = ""
     sent_by: str = ""
+    automatic: bool = False
 
 
 class _Text(HTMLParser):
@@ -102,6 +103,9 @@ def parse_message(raw: dict) -> Message:
         in_reply_to=headers.get("in-reply-to", ""), references=headers.get("references", ""),
         body=text.strip(), attachments=attachments, case=headers.get(CASE_HEADER.lower(), ""),
         sent_by=headers.get(SENT_BY_HEADER.lower(), ""),
+        # Receipts and out-of-office notes say so in their headers; nobody wrote them, so nobody should answer them.
+        automatic=(headers.get("auto-submitted", "no").lower() != "no" or "x-autoreply" in headers
+                   or headers.get("precedence", "").lower() in ("auto_reply", "bulk", "junk")),
     )
 
 

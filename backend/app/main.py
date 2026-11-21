@@ -2,6 +2,7 @@ import asyncio
 import hmac
 import logging
 import os
+from urllib.parse import unquote
 from contextlib import asynccontextmanager, closing
 from datetime import datetime
 from pathlib import Path
@@ -143,7 +144,7 @@ def edit_draft(message_id: int, edit: DraftEdit, conn=Depends(db)) -> dict:
 
 
 @app.post("/api/messages/{message_id}/send", dependencies=[Depends(guard)])
-def approve_and_send(message_id: int, conn=Depends(db)) -> dict:
+def approve_and_send(message_id: int, conn=Depends(db), x_approver: str | None = Header(None)) -> dict:
     """The human decision: this is the only place a message leaves the system."""
     if not get_settings().agents_on:
         raise HTTPException(409, "This copy of the desk only shows the data. Approve on the copy where the agents run.")
@@ -151,7 +152,8 @@ def approve_and_send(message_id: int, conn=Depends(db)) -> dict:
     if not mailbox:
         raise HTTPException(503, "no mailbox is configured")
     try:
-        sent = send_draft(conn, mailbox, message_id)
+        # A name typed into the desk is a record, not proof of identity: everyone shares one access key.
+        sent = send_draft(conn, mailbox, message_id, approved_by=unquote(x_approver or "").strip()[:80] or None)
     except (ValueError, RecipientNotAllowed) as e:
         raise HTTPException(409, str(e)) from e
     _save(get_settings())

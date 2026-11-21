@@ -89,7 +89,8 @@ export type Message = {
   sent_at: string | null;
   reading: Reading | null;
   commits: "nothing" | "money_or_terms" | null;
-  sent_by: "agent" | "human" | null;
+  sent_by: "agent" | "human" | "other" | "auto" | null;
+  approved_by: string | null;
   held_because: string | null;
 };
 
@@ -103,6 +104,8 @@ export type Case = {
   needs_human: string | null;
   cost_usd: number;
   card: { headline: string; problem: string; suggestion: string; your_step: string } | null;
+  saves_alone: number;
+  then_limited_by: string[];
   updated_at: string;
   summary: string | null;
   why: string | null;
@@ -133,6 +136,7 @@ export type Overview = {
   needs_review: { path: string; detail: string }[];
   spend: { today_usd: number; budget_usd: number; by_kind: { kind: string; usd: number; calls: number }[] };
   activity: { at: string | null; kind: "files" | "reply" | "sent_by_agent" | "sent_by_human" | "handover"; case_key: string | null; text: string; detail: string | null }[];
+  plan: { short_now: number; short_if_all_solved: number | null };
   foreign_mail: { counterpart_name: string | null; subject: string; sent_at: string }[];
   agent_work: { sent_by_agents: number; approved_by_people: number; replies: number; findings: number };
   loop: { last_tick: { at: string; errors: string[] } | null; running: boolean; agents_on: boolean };
@@ -159,7 +163,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const getOverview = () => call<Overview>("/api/overview");
-export const sendMessage = (id: number) => call(`/api/messages/${id}/send`, { method: "POST" });
+export const sendMessage = (id: number, approver: string) =>
+  call(`/api/messages/${id}/send`, { method: "POST", headers: { "X-Approver": encodeURIComponent(approver) } });
 export const editDraft = (id: number, subject: string, body: string) =>
   call(`/api/messages/${id}`, { method: "PATCH", body: JSON.stringify({ subject, body }) });
 export const reworkCase = (materialId: string) => call(`/api/cases/${materialId}/rework`, { method: "POST" });

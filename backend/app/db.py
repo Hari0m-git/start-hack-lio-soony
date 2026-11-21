@@ -134,8 +134,8 @@ CREATE TABLE IF NOT EXISTS ingest_log (
 
 
 ADDED_COLUMNS = {
-    "messages": {"reading": "TEXT", "commits": "TEXT", "sent_by": "TEXT", "held_because": "TEXT"},
-    "cases": {"needs_human": "TEXT"},
+    "messages": {"reading": "TEXT", "commits": "TEXT", "sent_by": "TEXT", "held_because": "TEXT", "approved_by": "TEXT"},
+    "cases": {"needs_human": "TEXT", "runs_log": "TEXT"},
 }
 
 

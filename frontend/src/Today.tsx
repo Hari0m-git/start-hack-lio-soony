@@ -187,6 +187,36 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
         </section>
       )}
 
+      {data.cases.length > 0 && (
+        <section>
+          <h2 className="text-lg font-semibold">What each fix is worth</h2>
+          <p className="mt-1 text-sm text-muted">A copy needs every part, so the fixes do not simply add up.</p>
+          <Card className="mt-3 divide-y divide-line">
+            {[...data.cases]
+              .sort((a, b) => b.saves_alone - a.saves_alone)
+              .map((c) => (
+                <div key={c.key} className="flex flex-wrap items-baseline justify-between gap-x-4 px-5 py-3 text-sm">
+                  <span className="font-medium">{c.description}</span>
+                  <span className="text-muted">
+                    on its own saves <span className="font-semibold text-ink">{num(c.saves_alone)}</span> copies
+                    {c.then_limited_by.length > 0 && `, then ${c.then_limited_by.join(" and ")} hold${c.then_limited_by.length > 1 ? "" : "s"} the line`}
+                  </span>
+                </div>
+              ))}
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 px-5 py-3 text-sm">
+              <span className="font-semibold">All of them together</span>
+              <span className={`font-semibold ${data.plan.short_if_all_solved ? "text-warn" : "text-good"}`}>
+                {data.plan.short_if_all_solved == null
+                  ? "not known"
+                  : data.plan.short_if_all_solved > 0
+                    ? `${num(data.plan.short_if_all_solved)} copies still miss the launch`
+                    : "every copy is packed in time"}
+              </span>
+            </div>
+          </Card>
+        </section>
+      )}
+
       <section>
         <h2 className="text-lg font-semibold">Will we make it?</h2>
         <div className="mt-3 grid gap-4 lg:grid-cols-2">

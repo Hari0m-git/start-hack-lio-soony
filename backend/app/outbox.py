@@ -6,6 +6,7 @@ header, so correspondence can be rebuilt from Gmail after the service restarts.
 
 import json
 import logging
+import re
 import sqlite3
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -60,15 +61,29 @@ def parse_when(value: str | None) -> datetime | None:
     return None
 
 
+_OPEN, _CLOSE = re.escape("["), re.escape("]")
+_BLANK = re.compile(f"{_OPEN} *(insert|tbd|to be |todo|fill |your |xx|placeholder|[.][.][.])[^{_CLOSE}]*{_CLOSE}"
+                    "|[{][{][^}]*[}][}]|< *(insert|tbd|todo|fill )[^>]*>", re.IGNORECASE)
+
+
+def blanks(text: str | None) -> list[str]:
+    """Placeholders a draft still carries, such as '[insert forwarder]'. A message with one must not leave."""
+    return [m.group(0) for m in _BLANK.finditer(text or "")]
+
+
 def supplier_contacts(conn: sqlite3.Connection) -> dict[str, dict]:
     return {s["contact_email"].lower(): s for s in load(conn, "supplier") if s.get("contact_email")}
 
 
-def send_draft(conn: sqlite3.Connection, mailbox: Mailbox, message_id: int, sent_by: str = "human") -> dict:
+def send_draft(conn: sqlite3.Connection, mailbox: Mailbox, message_id: int, sent_by: str = "human",
+               approved_by: str | None = None) -> dict:
     """Send one approved draft. Only a draft, only once, only to a supplier contact from the data."""
     row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
     if not row or row["direction"] != "out" or row["status"] != "draft":
         raise ValueError(f"message {message_id} is not a draft waiting to be sent")
+    open_blanks = blanks(f"{row['subject']} {row['body']}")
+    if open_blanks:
+        raise ValueError(f"The message still has blanks to fill in ({', '.join(open_blanks[:3])}). Edit the wording first.")
     earlier = conn.execute(
         "SELECT gmail_id FROM messages WHERE case_key = ? AND counterpart_email = ? AND gmail_id IS NOT NULL ORDER BY id DESC",
         (row["case_key"], row["counterpart_email"])).fetchone()
@@ -76,8 +91,8 @@ def send_draft(conn: sqlite3.Connection, mailbox: Mailbox, message_id: int, sent
     sent = mailbox.send(row["counterpart_email"], row["subject"], row["body"], allowed=set(supplier_contacts(conn)),
                         reply_to=reply_to, case=row["case_key"], sent_by=sent_by)
     conn.execute("UPDATE messages SET status = 'sent', gmail_id = ?, thread_id = ?, message_id = ?, sent_at = ?, "
-                 "sent_by = ?, held_because = NULL WHERE id = ?",
-                 (sent["id"], sent["thread_id"], sent["message_id"], _now(), sent_by, message_id))
+                 "sent_by = ?, approved_by = ?, held_because = NULL WHERE id = ?",
+                 (sent["id"], sent["thread_id"], sent["message_id"], _now(), sent_by, approved_by, message_id))
     conn.execute("UPDATE cases SET status = 'waiting_for_supplier', updated_at = ? WHERE key = ?", (_now(), row["case_key"]))
     conn.commit()
     return sent
@@ -127,7 +142,7 @@ def sync_mailbox(conn: sqlite3.Connection, mailbox: Mailbox,
             continue
         case = _case_for(conn, msg, counterpart)
         reading = None
-        if not outgoing:
+        if not outgoing and not msg.automatic:
             ours = conn.execute("SELECT body_english, body FROM messages WHERE case_key = ? AND direction = 'out' AND "
                                 "status = 'sent' AND counterpart_email = ? ORDER BY id DESC", (case, counterpart)).fetchone()
             attached = []
@@ -149,8 +164,9 @@ def sync_mailbox(conn: sqlite3.Connection, mailbox: Mailbox,
              counterpart, msg.subject, msg.body, msg.id, msg.thread_id, msg.message_id, _now(),
              (parse_when(msg.date) or datetime.now(timezone.utc)).isoformat(timespec="seconds"),
              json.dumps(reading, ensure_ascii=False) if reading else None,
-             # Mail that left the mailbox without our mark was sent by someone or something else.
-             (msg.sent_by or "other") if outgoing else None))
+             # Mail that left the mailbox without our mark was sent by someone or something else; an automatic
+             # reply from the other side is filed but is not an answer.
+             (msg.sent_by or "other") if outgoing else ("auto" if msg.automatic else None)))
         if reading:
             for d in reading.get("deliveries") or []:
                 if d.get("dock_at") and d.get("quantity"):

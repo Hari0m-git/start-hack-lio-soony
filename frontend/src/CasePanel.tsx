@@ -50,6 +50,8 @@ function Draft({ message, onChanged }: { message: Message; onChanged: () => void
   const [busy, setBusy] = useState<"" | "send" | "save">("");
   const [error, setError] = useState("");
   const [showOriginal, setShowOriginal] = useState(!message.body_english);
+  const [approver, setApprover] = useState(() => localStorage.getItem("foredock.approver") ?? "");
+  const blanks = /[[] *(insert|tbd|todo|fill )[^[]*?]/i.test(`${message.subject} ${message.body}`);
 
   const run = async (kind: "send" | "save", action: () => Promise<unknown>) => {
     setBusy(kind);
@@ -110,6 +112,11 @@ function Draft({ message, onChanged }: { message: Message; onChanged: () => void
           {!showOriginal && <div className="mt-2 text-xs text-muted">Translation. The supplier receives the original in their language.</div>}
         </div>
       )}
+      {blanks && (
+        <div className="mt-3 rounded-lg bg-warn-soft px-3 py-2 text-sm text-warn">
+          This message still has blanks in square brackets. Fill them in under "Edit wording" before it can be sent.
+        </div>
+      )}
       {error && <div className="mt-3 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">{error}</div>}
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {editing ? (
@@ -123,7 +130,14 @@ function Draft({ message, onChanged }: { message: Message; onChanged: () => void
           </>
         ) : (
           <>
-            <Button disabled={!!busy} onClick={() => run("send", () => sendMessage(message.id))}>
+            <input
+              className="w-40 rounded-lg border border-line px-3 py-2 text-sm"
+              placeholder="Your name"
+              title="Recorded with the approval"
+              value={approver}
+              onChange={(e) => (localStorage.setItem("foredock.approver", e.target.value), setApprover(e.target.value))}
+            />
+            <Button disabled={!!busy || !approver.trim() || blanks} onClick={() => run("send", () => sendMessage(message.id, approver.trim()))}>
               {busy === "send" ? "Sending…" : `Approve and send to ${message.counterpart_name ?? "supplier"}`}
             </Button>
             <Button kind="quiet" disabled={!!busy} onClick={() => setEditing(true)}>
@@ -150,7 +164,11 @@ function Mail({ message }: { message: Message }) {
           <div className="truncate text-sm font-medium">{message.subject}</div>
         </div>
         <Chip tone={ours ? "neutral" : "good"}>
-          {!ours ? "Received" : message.sent_by === "agent" ? "Sent by the agent" : message.sent_by === "human" ? "Approved and sent" : "Sent"}
+          {!ours
+            ? message.sent_by === "auto" ? "Automatic reply" : "Received"
+            : message.sent_by === "agent" ? "Sent by the agent"
+            : message.sent_by === "other" ? "Not sent by the agents"
+            : message.approved_by ? `Approved by ${message.approved_by}` : "Approved and sent"}
         </Chip>
       </button>
       {r && (

@@ -198,6 +198,38 @@ def test_confirmed_existing_shipment_is_not_counted_twice(conn):
     assert row["inbound_counted"] == 250
 
 
+def test_a_case_is_reworked_when_its_facts_change_but_not_more_than_twice_an_hour(conn):
+    from datetime import datetime, timedelta, timezone
+    from app.pipeline import MAX_RUNS_PER_HOUR, due_cases
+
+    now = datetime(2026, 11, 21, 18, 0, tzinfo=timezone.utc)
+    due = due_cases(conn, now)
+    assert "B" in due
+
+    def worked(basis, minutes_ago):
+        log = json.dumps([(now - timedelta(minutes=m)).isoformat(timespec="seconds") for m in minutes_ago])
+        conn.execute("DELETE FROM cases")
+        conn.execute("INSERT INTO cases (key, material_id, status, basis, runs_log, created_at, updated_at) "
+                     "VALUES ('part:B', 'B', 'proposed', ?, ?, 't', 't')", (basis, log))
+
+    worked(due["B"], [5])
+    assert "B" not in due_cases(conn, now)                       # nothing changed
+    worked("older facts", [50])
+    assert "B" in due_cases(conn, now)                           # the facts changed
+    worked("older facts", [50, 20, 10][:MAX_RUNS_PER_HOUR])
+    assert "B" not in due_cases(conn, now)                       # they changed, but the hour's allowance is used up
+    worked("older facts", [130, 90])
+    assert "B" in due_cases(conn, now)
+
+
+def test_solving_one_part_is_only_worth_what_the_other_parts_allow(conn):
+    a = assess(conn, TODAY)
+    short = lambda **kw: {p["product_id"]: p["short"] for p in simulate(conn, a, ["P1", "P2"], **kw)["products"]}
+    assert short() == {"P1": 120, "P2": 300}
+    assert short(covered=frozenset({"B"})) == {"P1": 0, "P2": 300}       # B only holds back P1
+    assert short(covered=frozenset({"B", "C"})) == {"P1": 0, "P2": 0}
+
+
 def test_forecast_says_what_is_missing_when_documents_are_missing(conn):
     conn.execute("DELETE FROM records WHERE entity = 'doc_shift'")
     assert simulate(conn, assess(conn, TODAY))["ready"] is False

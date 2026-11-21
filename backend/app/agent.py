@@ -264,7 +264,8 @@ def build_brief(conn: sqlite3.Connection, material_id: str, assessment: Assessme
               "spare_hours_before_deadline": round(forecast["hours_available"] - (p["hours_needed"] or 0), 1)}
              for p in forecast.get("products", []) if material_id in
              {c["material_id"] for c in forecast["components"] if p["product_id"] in c["used_in"]}]
-    mail = [{"direction": ("supplier answered" if m["direction"] == "in" else "we wrote" if m["sent_by"] != "other" else
+    mail = [{"direction": ("automatic reply from the supplier's mailbox, not an answer" if m["sent_by"] == "auto" else
+                           "supplier answered" if m["direction"] == "in" else "we wrote" if m["sent_by"] != "other" else
                            "sent from our mailbox by something other than the agents; it does not speak for us"),
              "with": m["counterpart_name"],
              "at": m["sent_at"], "subject": m["subject"], "text": (m["body_english"] or m["body"] or "")[:3000],
@@ -293,7 +294,8 @@ def basis_of(brief: dict) -> str:
     part = brief.get("this_part") or {}
     material = {
         "findings": sorted(f["title"] for f in brief["findings"]),
-        "mail": [(m["direction"], m["at"], m["subject"]) for m in brief["correspondence_so_far"]],
+        "mail": [(m["direction"], m["at"], m["subject"]) for m in brief["correspondence_so_far"]
+                 if not m["direction"].startswith("automatic")],
         "lines": [(l["product_id"], l["copies_short_if_nobody_acts"] > 0, l["stopped_by"]) for l in brief["lines_using_this_part"]],
         "gap_in_tenths_of_need": round(10 * (part.get("gap") or 0) / max(1, part.get("need") or 1)),
         "confirmed": bool(part.get("confirmed_by_supplier")),
@@ -446,6 +448,8 @@ def save_case(conn: sqlite3.Connection, material_id: str, basis: str, decision: 
                trace = excluded.trace, needs_human = excluded.needs_human, updated_at = excluded.updated_at""",
         (key, material_id, basis, json.dumps(decision, ensure_ascii=False), json.dumps(trace, ensure_ascii=False),
          needs_human, now, now))
+    worked = json.loads(conn.execute("SELECT runs_log FROM cases WHERE key = ?", (key,)).fetchone()["runs_log"] or "[]")
+    conn.execute("UPDATE cases SET runs_log = ? WHERE key = ?", (json.dumps((worked + [now])[-20:]), key))
     conn.execute("DELETE FROM messages WHERE case_key = ? AND gmail_id IS NULL", (key,))  # unsent drafts are replaced
     for action in decision.get("actions") or []:
         supplier_mail = action["type"] == "email_supplier"

@@ -16,7 +16,7 @@ from typing import Callable
 
 from app import llm
 from app.mail import Mailbox
-from app.outbox import parse_when, send_draft, supplier_contacts
+from app.outbox import blanks, parse_when, send_draft, supplier_contacts
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +57,8 @@ def hold_reason(conn: sqlite3.Connection, message: sqlite3.Row, now: datetime,
         return "Automatic sending is switched off."
     if message["commits"] != "nothing":
         return "It commits money or terms, which only a person may approve."
+    if blanks(f"{message['subject']} {message['body']}"):
+        return "It still has blanks to fill in."
     case = conn.execute("SELECT * FROM cases WHERE key = ?", (message["case_key"],)).fetchone()
     if not case:
         return "It belongs to no open case."
@@ -70,7 +72,8 @@ def hold_reason(conn: sqlite3.Connection, message: sqlite3.Row, now: datetime,
         return "The recipient is not a supplier contact in the data."
     history = conn.execute(
         "SELECT direction, sent_by, sent_at FROM messages WHERE case_key = ? AND counterpart_email = ? AND gmail_id IS NOT NULL "
-        "ORDER BY id", (message["case_key"], message["counterpart_email"])).fetchall()
+        "AND COALESCE(sent_by, '') NOT IN ('auto', 'other') ORDER BY id",
+        (message["case_key"], message["counterpart_email"])).fetchall()
     if sum(h["sent_by"] == "agent" for h in history) >= MAX_AUTOMATIC_PER_CONTACT:
         return f"{MAX_AUTOMATIC_PER_CONTACT} messages have gone to this contact without a person looking."
     if history and history[-1]["direction"] == "out":

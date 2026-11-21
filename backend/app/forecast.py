@@ -60,11 +60,12 @@ def shift_windows(conn: sqlite3.Connection, launch: date) -> list[tuple[datetime
 
 
 def simulate(conn: sqlite3.Connection, assessment: Assessment, priority: list[str] | None = None,
-             trust_erp: bool = False, with_actions: bool = False) -> dict:
+             trust_erp: bool = False, with_actions: bool = False, covered: frozenset[str] = frozenset()) -> dict:
     """Pack hour by hour until the deadline.
 
     trust_erp     ignore the findings and count stock and inbound as the ERP shows them
     with_actions  also count inbound goods that only arrive if somebody acts (e.g. a container to collect)
+    covered       parts assumed to be solved, to see what solving them is worth
     """
     facts = Facts(conn)
     start, status = pack_status(conn)
@@ -83,7 +84,7 @@ def simulate(conn: sqlite3.Connection, assessment: Assessment, priority: list[st
     bom = defaultdict(dict)
     for line in facts.bom:
         valid = (_day(line.get("valid_from")) or date.min) <= launch <= (_day(line.get("valid_to")) or date.max)
-        if line["parent_id"] in remaining and valid and line["child_id"] not in assessment.untracked:
+        if line["parent_id"] in remaining and valid and line["child_id"] not in assessment.untracked | covered:
             bom[line["parent_id"]][line["child_id"]] = _num(line.get("qty_per")) or 1
     parts = {c for children in bom.values() for c in children}
 

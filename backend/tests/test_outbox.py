@@ -119,6 +119,38 @@ def test_correspondence_is_rebuilt_from_the_mailbox_after_a_restart(conn):
     assert rows == [("out", "sent", CASE), ("in", "received", CASE)]
 
 
+def test_a_draft_with_blanks_cannot_be_sent(conn):
+    box = FakeMailbox()
+    mid = draft(conn)
+    conn.execute("UPDATE messages SET body = 'Forwarder: [insert approved forwarder]' WHERE id = ?", (mid,))
+    with pytest.raises(ValueError, match="blanks"):
+        send_draft(conn, box, mid)
+    assert box.sent == []
+
+
+def test_ordinary_brackets_are_not_mistaken_for_blanks():
+    from app.outbox import blanks
+
+    assert blanks("Art Book [96 p, hardcover], PO 4500318768 (line 3)") == []
+    assert blanks("Pickup time: [insert confirmed time], contact {{name}}") == ["[insert confirmed time]", "{{name}}"]
+
+
+def test_the_approver_is_recorded(conn):
+    mid = draft(conn)
+    send_draft(conn, FakeMailbox(), mid, approved_by="Hari K")
+    assert tuple(conn.execute("SELECT sent_by, approved_by FROM messages WHERE id = ?", (mid,)).fetchone()) == ("human", "Hari K")
+
+
+def test_an_automatic_reply_is_filed_but_not_read_as_an_answer(conn):
+    box = FakeMailbox()
+    send_draft(conn, box, draft(conn))
+    box.store["r1"] = Message(**{**reply(body="Out of office until Monday.").__dict__, "automatic": True})
+    assert sync_mailbox(conn, box, lambda *a: pytest.fail("an automatic reply must not be read")) == []
+    row = conn.execute("SELECT direction, sent_by, reading FROM messages WHERE gmail_id = 'r1'").fetchone()
+    assert tuple(row) == ("in", "auto", None)
+    assert conn.execute("SELECT status FROM cases").fetchone()[0] == "waiting_for_supplier"
+
+
 def test_mail_from_strangers_is_ignored(conn):
     box = FakeMailbox()
     box.store["x1"] = reply(sender="phisher@suppliers.example", gmail_id="x1")
