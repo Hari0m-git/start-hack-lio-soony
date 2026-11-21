@@ -19,7 +19,7 @@ from app.truth import Assessment, Facts, assess, load
 log = logging.getLogger(__name__)
 
 LOCAL = ZoneInfo("Europe/Berlin")  # the portal states all times in Europe/Berlin
-MAX_STEPS = 14
+MAX_STEPS = 10
 MAX_RESULT_CHARS = 14_000
 POLICY_KINDS = ("approval_rule", "role", "priority", "obligation")
 

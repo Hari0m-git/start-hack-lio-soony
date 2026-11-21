@@ -32,7 +32,8 @@ WAIT = timedelta(minutes=30)       # how long a supplier gets to answer before t
 GRACE = timedelta(minutes=10)      # how long the slower suppliers get once the first one has answered
 MAX_FAILURES = 2                   # attempts on the same facts before a person takes over
 MAX_RUNS_PER_HOUR = 2              # automatic reworks of one case; a person can still ask for one
-DAILY_BUDGET_USD = float(os.environ.get("DAILY_BUDGET_USD", "25"))
+DAILY_BUDGET_USD = float(os.environ.get("DAILY_BUDGET_USD", "5"))
+HOURLY_BUDGET_USD = float(os.environ.get("HOURLY_BUDGET_USD", "1"))
 failures: dict[str, int] = {}
 # Findings that only inform; they never open a case on their own.
 INFORMATIONAL = {"not_stocked_separately", "tracker_out_of_date", "no_news"}
@@ -86,6 +87,11 @@ def due_cases(conn: sqlite3.Connection, now: datetime) -> dict[str, str]:
     return due
 
 
+def spent_last_hour(conn: sqlite3.Connection, now: datetime) -> float:
+    since = (now.astimezone(timezone.utc) - timedelta(hours=1)).isoformat(timespec="seconds")
+    return conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM llm_usage WHERE ts >= ?", (since,)).fetchone()[0]
+
+
 def spent_today(conn: sqlite3.Connection, now: datetime) -> float:
     start = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
     return conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM llm_usage WHERE ts >= ?", (start,)).fetchone()[0]
@@ -114,6 +120,11 @@ def tick(settings: Settings, mailbox: Mailbox | None = None, now: datetime | Non
                 log.exception("mailbox sync failed")
                 report["errors"].append(f"mailbox: {e}")
         due = due_cases(conn, now)
+        if due and spent_last_hour(conn, now) >= HOURLY_BUDGET_USD:
+            # Working cases is where the money goes. Past the hourly limit they wait; watching and reading go on.
+            report["errors"].append(f"The hourly limit of ${HOURLY_BUDGET_USD:.2f} for working cases is reached; "
+                                    f"{len(due)} case(s) wait for the next hour.")
+            due = {}
 
     def work(material_id: str) -> str | None:
         try:

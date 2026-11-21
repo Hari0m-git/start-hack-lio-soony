@@ -184,3 +184,12 @@ def test_small_changes_in_the_numbers_do_not_reopen_a_case_but_material_ones_do(
     assert basis_of(brief(2000)) != base                      # most of the gap closed
     assert basis_of(brief(0, short=0)) != base                # solved
     assert basis_of(brief(5900, mail=[{"direction": "supplier answered", "at": "t", "subject": "Re"}])) != base
+
+
+def test_spend_in_the_last_hour_counts_only_the_last_hour(conn):
+    from app.pipeline import spent_last_hour
+
+    for minutes, usd in ((10, 0.25), (50, 0.40), (70, 5.00)):
+        conn.execute("INSERT INTO llm_usage (ts, purpose, model, input_tokens, cached_tokens, output_tokens, cost_usd) "
+                     "VALUES (?, 'case:X', 'm', 0, 0, 0, ?)", ((NOW - timedelta(minutes=minutes)).isoformat(timespec="seconds"), usd))
+    assert spent_last_hour(conn, NOW) == pytest.approx(0.65)
