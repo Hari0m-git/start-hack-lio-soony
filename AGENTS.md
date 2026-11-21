@@ -16,3 +16,9 @@ START Hack Munich 2026, Lio challenge. Submission deadline: Sunday 22 Nov 2026, 
 - No global git identity on this machine. Commit with
   `git -c user.name="Hari0m-git" -c user.email="harisankarkaramchand@gmail.com" commit ...`
 - Push with `git -c credential.helper= -c credential.helper='!gh auth git-credential' push`
+
+## Deploy (Render free web service, root directory `backend`)
+- Build: `pip install -r requirements.txt`. Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+- After changing dependencies, regenerate: `uv export --no-dev --no-hashes --no-emit-project -o requirements.txt`
+- Free tier limits that shape the design: the disk is wiped on every restart, the service stops after
+  15 idle minutes (hence the self-ping), and outbound SMTP ports 25/465/587 are blocked.

@@ -14,6 +14,8 @@ class Settings:
     portal_token: str
     data_dir: Path
     db_path: Path
+    poll_seconds: int
+    public_url: str | None
 
 
 def get_settings() -> Settings:
@@ -23,4 +25,6 @@ def get_settings() -> Settings:
         portal_token=os.environ["SOONY_API_TOKEN"],
         data_dir=data_dir,
         db_path=Path(os.environ.get("DB_PATH", data_dir / "state.sqlite")),
+        poll_seconds=int(os.environ.get("POLL_SECONDS", "120")),
+        public_url=os.environ.get("RENDER_EXTERNAL_URL"),
     )
