@@ -16,6 +16,7 @@ import httpx
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
+CASE_HEADER = "X-Soony-Case"
 
 
 class RecipientNotAllowed(ValueError):
@@ -35,6 +36,7 @@ class Message:
     references: str
     body: str
     attachments: list[dict] = field(default_factory=list)
+    case: str = ""
 
 
 class _Text(HTMLParser):
@@ -50,11 +52,15 @@ def _decode(data: str) -> bytes:
     return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
 
 
-def build_message(sender: str, to: str, subject: str, body: str, reply_to: Message | None = None) -> EmailMessage:
+def build_message(sender: str, to: str, subject: str, body: str, reply_to: Message | None = None,
+                  case: str = "") -> EmailMessage:
     msg = EmailMessage()
     msg["From"], msg["To"], msg["Subject"] = sender, to, subject
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain=sender.rsplit("@", 1)[-1])
+    if case:
+        # The mailbox is the lasting record of what was sent; this ties a sent mail back to its case.
+        msg[CASE_HEADER] = case
     if reply_to and reply_to.message_id:
         msg["In-Reply-To"] = reply_to.message_id
         msg["References"] = f"{reply_to.references} {reply_to.message_id}".strip()
@@ -90,7 +96,7 @@ def parse_message(raw: dict) -> Message:
         to=parseaddr(headers.get("to", ""))[1].lower(), subject=headers.get("subject", ""),
         date=headers.get("date", ""), message_id=headers.get("message-id", ""),
         in_reply_to=headers.get("in-reply-to", ""), references=headers.get("references", ""),
-        body=text.strip(), attachments=attachments,
+        body=text.strip(), attachments=attachments, case=headers.get(CASE_HEADER.lower(), ""),
     )
 
 
@@ -118,11 +124,12 @@ class Mailbox:
         r.raise_for_status()
         return r.json()
 
-    def send(self, to: str, subject: str, body: str, allowed: set[str], reply_to: Message | None = None) -> dict:
+    def send(self, to: str, subject: str, body: str, allowed: set[str], reply_to: Message | None = None,
+             case: str = "") -> dict:
         to = to.strip().lower()
         if to not in {a.lower() for a in allowed}:
             raise RecipientNotAllowed(f"{to} is not a known contact; nothing was sent")
-        msg = build_message(self.address, to, subject, body, reply_to)
+        msg = build_message(self.address, to, subject, body, reply_to, case)
         payload = {"raw": base64.urlsafe_b64encode(msg.as_bytes()).decode()}
         if reply_to:
             payload["threadId"] = reply_to.thread_id

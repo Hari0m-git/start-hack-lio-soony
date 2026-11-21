@@ -50,6 +50,7 @@ class Inbound:
     status: str
     needs_action: bool = False
     onward_days: int = 0
+    reference: str | None = None
     reasons: list[str] = field(default_factory=list)
 
 
@@ -283,7 +284,7 @@ def assess(conn: sqlite3.Connection, today: date | None = None) -> Assessment:
                           and str(p.get("status") or "").lower() not in ("delivered", "cancelled")]
             qty = sum(_num(p.get("quantity")) for p in open_lines)
             item = Inbound(s["shipment_id"], material, qty, qty, dock.isoformat() if dock else None, status,
-                           onward_days=last_leg)
+                           onward_days=last_leg, reference=s.get("reference"))
             inbound.append(item)
 
             short = [l for l in f.doc_lines if l.get("material_id") == material and l.get("qty_ordered") is not None

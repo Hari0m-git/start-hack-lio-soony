@@ -102,11 +102,28 @@ def simulate(conn: sqlite3.Connection, assessment: Assessment, priority: list[st
     at_start = dict(available)
 
     # Inbound: when each shipment can be counted on.
-    arrivals, counted, at_risk = [], defaultdict(float), defaultdict(float)
+    arrivals, counted, at_risk, confirmed = [], defaultdict(float), defaultdict(float), defaultdict(float)
+    # What suppliers have committed to by mail: the newest word per case and part replaces what the ERP expects.
+    promised = [] if trust_erp else conn.execute(
+        """SELECT * FROM commitments c WHERE message_id = (
+               SELECT MAX(message_id) FROM commitments WHERE case_key = c.case_key AND material_id = c.material_id)""").fetchall()
+    superseded = {(c["material_id"], c["shipment_ref"]) for c in promised if c["shipment_ref"]}
+    for c in promised:
+        when = _moment(c["dock_at"])
+        if c["material_id"] not in parts or not when:
+            continue
+        if not c["firm"] and not with_actions:
+            at_risk[c["material_id"]] += c["quantity"]
+        elif when < deadline:
+            arrivals.append((max(start, when), c["material_id"], c["quantity"], f"commitment {c['id']}"))
+            counted[c["material_id"]] += c["quantity"]
+            confirmed[c["material_id"]] += c["quantity"]
     for i in assessment.inbound:
         qty = i.erp_qty if trust_erp else i.credible_qty
         dock = _day(i.dock_date)
         if i.material_id not in parts or not qty or not dock:
+            continue
+        if {(i.material_id, i.shipment_id), (i.material_id, i.reference)} & superseded:
             continue
         when = max(start, datetime.combine(dock, time(ARRIVAL_HOUR)))
         if i.needs_action and not trust_erp:
@@ -163,7 +180,7 @@ def simulate(conn: sqlite3.Connection, assessment: Assessment, priority: list[st
     components = [{
         "material_id": c, "description": facts.components.get(c, {}).get("description"),
         "need": need[c], "erp_stock": max(0, erp[c] - used[c]), "usable_stock": at_start[c],
-        "inbound_counted": counted[c], "inbound_needing_action": at_risk[c],
+        "inbound_counted": counted[c], "inbound_needing_action": at_risk[c], "confirmed_by_supplier": confirmed[c],
         "gap": max(0, need[c] - at_start[c] - counted[c]),
         "used_in": [p for p in order if c in bom[p]],
     } for c in sorted(parts)]

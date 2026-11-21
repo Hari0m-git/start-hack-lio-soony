@@ -16,6 +16,8 @@ class Settings:
     db_path: Path
     poll_seconds: int
     public_url: str | None
+    access_key: str | None
+    mail_configured: bool
 
 
 def get_settings() -> Settings:
@@ -27,4 +29,7 @@ def get_settings() -> Settings:
         db_path=Path(os.environ.get("DB_PATH", data_dir / "state.sqlite")),
         poll_seconds=int(os.environ.get("POLL_SECONDS", "120")),
         public_url=os.environ.get("RENDER_EXTERNAL_URL"),
+        access_key=os.environ.get("APP_ACCESS_KEY") or None,
+        mail_configured=all(os.environ.get(k) for k in ("MAIL_ADDRESS", "GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET",
+                                                        "GMAIL_REFRESH_TOKEN")),
     )

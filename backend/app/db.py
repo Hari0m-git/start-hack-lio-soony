@@ -94,7 +94,21 @@ CREATE TABLE IF NOT EXISTS messages (
     thread_id TEXT,
     message_id TEXT,
     created_at TEXT NOT NULL,
-    sent_at TEXT
+    sent_at TEXT,
+    reading TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS messages_gmail ON messages (gmail_id) WHERE gmail_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS commitments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL REFERENCES messages(id),
+    case_key TEXT NOT NULL,
+    material_id TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    dock_at TEXT NOT NULL,
+    firm INTEGER NOT NULL,
+    condition TEXT,
+    shipment_ref TEXT,
+    created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS ingest_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,7 +126,14 @@ CREATE TABLE IF NOT EXISTS ingest_log (
 def connect(db_path: Path | str) -> sqlite3.Connection:
     if db_path != ":memory:":
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    # The background loop and the API write at the same time: wait for the other writer instead of failing.
+    conn = sqlite3.connect(db_path, timeout=30)
     conn.row_factory = sqlite3.Row
+    if db_path != ":memory:":
+        conn.execute("PRAGMA journal_mode=WAL")
+    # Databases created before a column existed get it added; everything else is created on first use.
+    has_messages = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'messages'").fetchone()
+    if has_messages and "reading" not in {c["name"] for c in conn.execute("PRAGMA table_info(messages)")}:
+        conn.execute("ALTER TABLE messages ADD COLUMN reading TEXT")
     conn.executescript(SCHEMA)
     return conn

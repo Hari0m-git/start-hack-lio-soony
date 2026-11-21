@@ -167,6 +167,37 @@ def test_shared_parts_are_kept_for_the_product_with_priority(conn):
     assert unranked["P1"]["short"] > 0  # without a priority, P2's faster lines eat the shared part
 
 
+def commit(conn, message_id, material, qty, dock_at, firm, shipment_ref=None):
+    conn.execute("INSERT INTO commitments (message_id, case_key, material_id, quantity, dock_at, firm, shipment_ref, created_at) "
+                 "VALUES (?, 'case', ?, ?, ?, ?, ?, 't')", (message_id, material, qty, dock_at, int(firm), shipment_ref))
+
+
+def short(conn, **kw):
+    return {p["product_id"]: p["short"] for p in simulate(conn, assess(conn, TODAY), ["P1", "P2"], **kw)["products"]}
+
+
+def test_firm_supplier_commitment_closes_the_gap_and_a_conditional_one_does_not(conn):
+    commit(conn, 1, "B", 120, "2026-11-22T07:00:00", firm=False)
+    assert short(conn)["P1"] == 120
+    assert short(conn, with_actions=True)["P1"] == 0
+    assert short(conn, trust_erp=True)["P1"] == 0  # the ERP view never sees mail
+    commit(conn, 2, "B", 120, "2026-11-22T07:00:00", firm=True)  # the supplier's newer word replaces the older
+    assert short(conn)["P1"] == 0
+    row = next(c for c in simulate(conn, assess(conn, TODAY), ["P1", "P2"])["components"] if c["material_id"] == "B")
+    assert (row["confirmed_by_supplier"], row["inbound_needing_action"]) == (120, 0)
+
+
+def test_commitment_that_arrives_after_the_line_has_idled_too_long_saves_fewer_copies(conn):
+    commit(conn, 1, "B", 120, "2026-11-22T19:00:00", firm=True)
+    assert short(conn)["P1"] == 110  # one hour left at 10 an hour
+
+
+def test_confirmed_existing_shipment_is_not_counted_twice(conn):
+    commit(conn, 1, "A", 250, "2026-11-22T09:00:00", firm=True, shipment_ref="AWB-1")
+    row = next(c for c in simulate(conn, assess(conn, TODAY), ["P1", "P2"])["components"] if c["material_id"] == "A")
+    assert row["inbound_counted"] == 250
+
+
 def test_forecast_says_what_is_missing_when_documents_are_missing(conn):
     conn.execute("DELETE FROM records WHERE entity = 'doc_shift'")
     assert simulate(conn, assess(conn, TODAY))["ready"] is False

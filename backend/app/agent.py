@@ -42,6 +42,12 @@ policy names a role that is vacant, say who decides instead according to the pol
 specific: order and document numbers, quantities, the time by which you need an answer, and the exact questions. \
 Give an English translation. Sign as "Soony Procurement (AI assistant, on behalf of Soony Interactive GmbH)". \
 Internal escalations are in English and fit on a phone screen.
+- The case states the gap of this part. A line may also be short because of other parts; those have their own \
+case, so size your recommendation to this part's gap and say so when another part limits the line more.
+- If there is correspondence already, build on it. Never ask again what the supplier has answered. If the \
+supplier has set a condition, the next action is whatever meets it; if they declined, find another way. If we \
+have written and the answer time we set has not passed, do not draft another message to that supplier: say that \
+you are waiting and until when.
 - You do not send anything. A human approves each message.
 
 Finish by calling submit_decision."""
@@ -155,9 +161,17 @@ class Toolbox:
         return {
             "component": f.components.get(material_id),
             "used_in": [{"product_id": b["parent_id"], "qty_per": b.get("qty_per")} for b in f.bom if b["child_id"] == material_id],
-            "forecast": next((c for c in forecast.get("components", []) if c["material_id"] == material_id), None),
+            "position_now": {
+                "explanation": "need = pieces still required for the copies left to pack. usable_stock = what is on "
+                               "site now and may be packed. gap = need minus usable_stock minus inbound_counted; a gap "
+                               "above zero is what is missing.",
+                **(next((c for c in forecast.get("components", []) if c["material_id"] == material_id), None) or {})},
             "deadline": forecast.get("deadline"), "as_of": forecast.get("as_of"),
-            "stock_batches": [vars(b) for b in self.assessment.batches if b.material_id == material_id],
+            "stock_batches_at_last_snapshot": {
+                "snapshot_date": f.snapshot_date,
+                "note": "Quantities as booked on the snapshot date. Packing since then has consumed part of them, so "
+                        "they add up to more than is on site now; use position_now for what is available.",
+                "batches": [vars(b) for b in self.assessment.batches if b.material_id == material_id]},
             "inbound": [vars(i) for i in self.assessment.inbound if i.material_id == material_id],
             "open_orders": [{k: p.get(k) for k in ("po_number", "po_line", "supplier_id", "quantity", "unit_price", "currency",
                                                    "promised_date", "status", "buyer")} for p in open_orders[:12]],
@@ -221,21 +235,39 @@ def check_decision(decision: dict, known_paths: set[str], contacts: set[str]) ->
     return problems
 
 
-def run_case(conn: sqlite3.Connection, material_id: str, now: datetime | None = None) -> dict:
-    now = (now or datetime.now(LOCAL)).replace(tzinfo=None)
-    assessment = assess(conn, now.date())
-    priority = priority_order(conn)
-    box = Toolbox(conn, assessment, priority["order"])
-    forecast = simulate(conn, assessment, priority["order"])
+def build_brief(conn: sqlite3.Connection, material_id: str, assessment: Assessment, priority: dict, forecast: dict) -> dict:
+    """Everything that defines a case. When it changes, the case is worked again."""
     lines = [{"product_id": p["product_id"], "copies_short_if_nobody_acts": p["short"],
               "line_stops_at": p["first_stop"]["at"] if p["first_stop"] else None,
               "stopped_by": p["first_stop"]["material_id"] if p["first_stop"] else None,
               "spare_hours_before_deadline": round(forecast["hours_available"] - (p["hours_needed"] or 0), 1)}
              for p in forecast.get("products", []) if material_id in
              {c["material_id"] for c in forecast["components"] if p["product_id"] in c["used_in"]}]
-    brief = {"part": material_id, "now": now.strftime("%A %d %b %Y, %H:%M") + " (Europe/Berlin)",
-             "deadline": forecast.get("deadline"), "lines_using_this_part": lines, "priority_rule": priority,
-             "findings": [{"title": f.title, "detail": f.detail} for f in assessment.findings if f.material_id == material_id]}
+    mail = [{"direction": "we wrote" if m["direction"] == "out" else "supplier answered", "with": m["counterpart_name"],
+             "at": m["sent_at"], "subject": m["subject"], "text": (m["body_english"] or m["body"] or "")[:3000],
+             "what_it_commits_to": json.loads(m["reading"]) if m["reading"] else None}
+            for m in conn.execute("SELECT * FROM messages WHERE case_key = ? AND gmail_id IS NOT NULL ORDER BY id",
+                                  (f"part:{material_id}",))]
+    position = next((c for c in forecast.get("components", []) if c["material_id"] == material_id), None)
+    return {"part": material_id, "deadline": forecast.get("deadline"),
+            "this_part": position and {k: position[k] for k in ("need", "usable_stock", "inbound_counted",
+                                                                 "inbound_needing_action", "confirmed_by_supplier", "gap")},
+            "lines_using_this_part": lines, "priority_rule": priority, "correspondence_so_far": mail,
+            "findings": [{"title": f.title, "detail": f.detail} for f in assessment.findings if f.material_id == material_id]}
+
+
+def basis_of(brief: dict) -> str:
+    return hashlib.sha256(json.dumps(brief, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
+
+
+def run_case(conn: sqlite3.Connection, material_id: str, now: datetime | None = None) -> dict:
+    now = (now or datetime.now(LOCAL)).replace(tzinfo=None)
+    assessment = assess(conn, now.date())
+    priority = priority_order(conn)
+    box = Toolbox(conn, assessment, priority["order"])
+    brief = build_brief(conn, material_id, assessment, priority, simulate(conn, assessment, priority["order"]))
+    basis = basis_of(brief)
+    brief = {"now": now.strftime("%A %d %b %Y, %H:%M") + " (Europe/Berlin)", **brief}
     messages = [{"role": "system", "content": SYSTEM},
                 {"role": "user", "content": f"Case: {json.dumps(brief, ensure_ascii=False)}"}]
     tools = [{"type": "function", "function": t} for t in TOOLS]
@@ -265,8 +297,6 @@ def run_case(conn: sqlite3.Connection, material_id: str, now: datetime | None = 
 
     known = {r["path"] for r in conn.execute("SELECT path FROM files WHERE removed_at IS NULL")}
     decision["checks"] = check_decision(decision, known, box.contacts())
-    stable = {k: v for k, v in brief.items() if k != "now"}
-    basis = hashlib.sha256(json.dumps(stable, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
     key, now = f"part:{material_id}", _now()
     conn.execute(
         """INSERT INTO cases (key, material_id, status, basis, decision, trace, created_at, updated_at)
@@ -274,7 +304,7 @@ def run_case(conn: sqlite3.Connection, material_id: str, now: datetime | None = 
            ON CONFLICT(key) DO UPDATE SET status = 'proposed', basis = excluded.basis, decision = excluded.decision,
                trace = excluded.trace, updated_at = excluded.updated_at""",
         (key, material_id, basis, json.dumps(decision, ensure_ascii=False), json.dumps(trace, ensure_ascii=False), now, now))
-    conn.execute("DELETE FROM messages WHERE case_key = ? AND status = 'draft'", (key,))
+    conn.execute("DELETE FROM messages WHERE case_key = ? AND gmail_id IS NULL", (key,))  # unsent drafts are replaced
     for action in decision.get("actions") or []:
         conn.execute(
             """INSERT INTO messages (case_key, direction, status, counterpart_name, counterpart_email, language, subject,
