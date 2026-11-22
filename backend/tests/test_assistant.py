@@ -103,3 +103,9 @@ def test_saved_case_evidence_is_validated_and_drafts_are_not_exposed(desk, tmp_p
     assert answer["evidence"] == ["valid.pdf"]
     assert tuple(conn.execute("SELECT subject, status FROM messages").fetchone()) == ("Old", "draft")
     conn.close()
+
+
+def test_timestamps_in_an_answer_get_their_weekday_from_code(desk, monkeypatch):
+    monkeypatch.setattr(llm, "assistant_chat", lambda *args: {"content": "The line stops at 2026-11-22T11:16 and at 2026-11-21T21:50:00."})
+    answer = desk.post("/api/assistant/turn", headers=PERSONAL, json={"message": "When?"}).json()["answer"]
+    assert answer == "The line stops at Sun 11:16 and at Sat 21:50."

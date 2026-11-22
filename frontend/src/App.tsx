@@ -233,9 +233,17 @@ export default function App() {
       </main>
 
       {ask && (
-        <div className="rise fixed inset-x-3 bottom-20 z-30 max-h-[75vh] overflow-y-auto rounded-2xl shadow-2xl sm:inset-x-auto sm:bottom-auto sm:right-6 sm:top-[72px] sm:w-[430px]">
+        <div className="rise fixed inset-x-3 bottom-20 top-16 z-30 rounded-2xl shadow-2xl sm:inset-x-auto sm:bottom-6 sm:right-6 sm:top-[72px] sm:h-[min(680px,calc(100vh-96px))] sm:w-[440px]">
           {accessKey() ? (
-            <AskForedock key={accessKey()} caseKey={open} onOpen={setOpen} verified={data.me.verified} availability={data.voice} />
+            <AskForedock
+              key={accessKey()}
+              caseKey={open}
+              // A case opens in the same corner, so the assistant steps aside for it.
+              onOpen={(key) => (setOpen(key), setAsk(false))}
+              onClose={() => setAsk(false)}
+              verified={data.me.verified}
+              availability={data.voice}
+            />
           ) : (
             <section className="glass rounded-2xl border border-line p-4 text-sm">
               <div className="font-semibold">Ask Foredock</div>
