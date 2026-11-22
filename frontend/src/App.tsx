@@ -16,12 +16,66 @@ const PAGES: { id: Page; label: string }[] = [
   { id: "agents", label: "Agents" },
 ];
 
+function Mic() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden>
+      <rect x="9" y="3.5" width="6" height="11" rx="3" />
+      <path d="M5.5 11.5a6.5 6.5 0 0013 0M12 18v2.5" />
+    </svg>
+  );
+}
+
+function Wordmark() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <svg viewBox="0 0 32 32" className="h-9 w-9 shrink-0" aria-hidden>
+        <rect width="32" height="32" rx="9" className="fill-accent-600" />
+        <path d="M8 21l8-4.5 8 4.5-8 4.5z" fill="#fff" opacity=".55" />
+        <path d="M8 15.5L16 11l8 4.5-8 4.5z" fill="#fff" opacity=".8" />
+        <path d="M8 10l8-4.5L24 10l-8 4.5z" fill="#fff" />
+      </svg>
+      <div className="leading-tight">
+        <div className="font-display text-base font-semibold tracking-tight">Foredock</div>
+        <div className="text-[11px] text-muted">Soony · Grand Heist 6 launch</div>
+      </div>
+    </div>
+  );
+}
+
+function ThemeToggle() {
+  const system = () => (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const [theme, setTheme] = useState(() => document.documentElement.dataset.theme ?? system());
+  const next = theme === "dark" ? "light" : "dark";
+  return (
+    <button
+      aria-label={`Switch to ${next} theme`}
+      title={`Switch to ${next} theme`}
+      onClick={() => {
+        document.documentElement.dataset.theme = next;
+        localStorage.setItem("foredock.theme", next);
+        setTheme(next);
+        window.dispatchEvent(new Event("foredock-theme"));
+      }}
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line bg-card text-accent-ink hover:bg-accent-soft"
+    >
+      <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden>
+        {theme === "dark" ? (
+          <path d="M12 4v1.5M12 18.5V20M4 12h1.5M18.5 12H20M6.3 6.3l1.1 1.1M16.6 16.6l1.1 1.1M6.3 17.7l1.1-1.1M16.6 7.4l1.1-1.1M12 8.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" />
+        ) : (
+          <path d="M19.5 14.2A7.5 7.5 0 019.8 4.5a7.5 7.5 0 109.7 9.7z" />
+        )}
+      </svg>
+    </button>
+  );
+}
+
 function Gate({ onDone, refused }: { onDone: () => void; refused: boolean }) {
   const [key, setKey] = useState("");
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <Card className="w-full max-w-sm p-6">
-        <div className="text-xl font-semibold tracking-tight">Foredock</div>
+    <div className="dusk flex min-h-screen items-center justify-center p-4">
+      <Card className="glass w-full max-w-sm p-6">
+        <Wordmark />
+        <h1 className="mt-5 font-display text-xl font-semibold tracking-tight">Know before the dock</h1>
         <p className="mt-1 text-sm text-muted">This desk shows Soony's data. Enter your team's access key.</p>
         <form
           className="mt-4 space-y-3"
@@ -37,10 +91,11 @@ function Gate({ onDone, refused }: { onDone: () => void; refused: boolean }) {
             value={key}
             onChange={(e) => setKey(e.target.value)}
             placeholder="Access key"
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm"
+            aria-label="Access key"
+            className="w-full min-w-0 rounded-xl border border-line bg-card px-3 py-2.5 text-sm"
           />
           {refused && (
-            <p role="alert" className="text-sm text-bad">
+            <p role="alert" className="text-sm text-bad-ink">
               That key was not accepted. Check for a typo or an extra space, and that it is the key for this copy of the desk.
             </p>
           )}
@@ -116,51 +171,61 @@ export default function App() {
   const hoursLeft = hoursBetween(data.now, f.deadline) - (tick * 0.5) / 60;
   const waiting = data.cases.filter((c) => c.state === "needs_approval" || c.state === "needs_human").length;
   const opened = data.cases.find((c) => c.key === open);
+  const loop = data.loop.running ? "Agents working" : data.loop.agents_on ? "Agents on" : "Agents off";
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-10 border-b border-line bg-paper/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand text-lg font-bold text-white" aria-hidden>F</div>
-            <div className="leading-tight">
-              <div className="text-sm font-bold uppercase tracking-[0.14em]">Foredock</div>
-              <div className="text-xs text-muted">Launch desk · Soony · Grand Heist 6</div>
-            </div>
-          </div>
-          <nav className="order-3 flex w-full gap-1 sm:order-none sm:w-auto">
+      <header className="glass sticky top-0 z-10 border-b border-line">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-5 gap-y-2 px-4 py-2.5 sm:px-6">
+          <Wordmark />
+          <nav aria-label="Pages" className="order-3 flex w-full gap-1 rounded-full border border-line bg-card p-1 lg:order-none lg:w-auto">
             {PAGES.map((p) => (
               <button
                 key={p.id}
                 onClick={() => setPage(p.id)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${page === p.id ? "bg-ink text-white" : "text-muted hover:bg-line/60 hover:text-ink"}`}
+                aria-current={page === p.id ? "page" : undefined}
+                className={`flex-1 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-200 lg:flex-none ${page === p.id ? "bg-accent-600 text-white" : "text-muted hover:bg-accent-soft hover:text-ink"}`}
               >
                 {p.label}
                 {p.id === "today" && waiting > 0 && (
-                  <span className={`ml-1.5 rounded-full px-1.5 text-xs ${page === p.id ? "bg-white text-ink" : "bg-bad text-white"}`}>{waiting}</span>
+                  <span className={`ml-1.5 rounded-full px-1.5 text-xs font-semibold ${page === p.id ? "bg-white text-accent-700" : "bg-bad-soft text-bad-ink"}`}>
+                    {waiting}
+                  </span>
                 )}
               </button>
             ))}
           </nav>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="rounded-full border border-line bg-card px-3 py-1.5">
-              <span className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${data.loop.agents_on ? "bg-good" : "bg-muted"}`} />
-              Status {when(f.as_of)}
+          <div className="flex items-center gap-2 text-xs">
+            <div className="mr-1 text-right leading-tight">
+              <div className="text-[11px] text-muted">Trucks leave {when(f.deadline)}</div>
+              <div className="font-display text-lg font-semibold text-accent-ink" aria-label={`${countdown(hoursLeft)} until the trucks leave`}>
+                {countdown(hoursLeft)}
+              </div>
+            </div>
+            <span className="hidden items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 xl:flex" title={`Figures as of ${when(f.as_of)}`}>
+              <span className={`h-2 w-2 rounded-full ${data.loop.running ? "node-live bg-accent" : data.loop.agents_on ? "bg-good" : "bg-muted"}`} />
+              {loop}
             </span>
-            <span className="rounded-full border border-line bg-card px-3 py-1.5">Trucks leave {when(f.deadline)} · {countdown(hoursLeft)}</span>
-            <span className="hidden rounded-full border border-line bg-card px-3 py-1.5 md:inline">
-              AI spend ${data.spend.today_usd.toFixed(2)} / ${data.spend.budget_usd.toFixed(2)}
+            <span className="hidden rounded-full border border-line bg-card px-3 py-1.5 xl:inline" title="Model spend today against the daily limit">
+              ${data.spend.today_usd.toFixed(2)} / ${data.spend.budget_usd.toFixed(2)}
             </span>
-            <span className="rounded-full border border-line bg-card px-3 py-1.5 font-medium">
+            <span className="hidden max-w-36 truncate rounded-full border border-line bg-card px-3 py-1.5 font-medium 2xl:inline">
               {data.me.name ?? "Shared access"}
               {data.me.role === "viewer" && " · view only"}
             </span>
+            <button
+              onClick={() => setAsk(!ask)}
+              aria-expanded={ask}
+              className="hidden items-center gap-1.5 rounded-full bg-accent-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-accent-700 sm:flex"
+            >
+              <Mic /> {ask ? "Close" : "Ask Foredock"}
+            </button>
+            <ThemeToggle />
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-5 pb-20 pt-7">
-
+      <main className="mx-auto max-w-6xl px-4 pb-24 pt-6 sm:px-6">
         {page === "today" && <Today data={data} onOpen={setOpen} />}
         {page === "parts" && <Parts data={data} onOpen={setOpen} />}
         {page === "activity" && <Activity data={data} onOpen={setOpen} />}
@@ -168,11 +233,11 @@ export default function App() {
       </main>
 
       {ask && (
-        <div className="fixed inset-x-3 bottom-20 z-30 max-h-[75vh] overflow-y-auto rounded-2xl shadow-2xl sm:inset-x-auto sm:right-5 sm:w-[420px]">
+        <div className="rise fixed inset-x-3 bottom-20 z-30 max-h-[75vh] overflow-y-auto rounded-2xl shadow-2xl sm:inset-x-auto sm:bottom-auto sm:right-6 sm:top-[72px] sm:w-[430px]">
           {accessKey() ? (
             <AskForedock key={accessKey()} caseKey={open} onOpen={setOpen} verified={data.me.verified} availability={data.voice} />
           ) : (
-            <section className="rounded-2xl border border-line bg-white p-4 text-sm">
+            <section className="glass rounded-2xl border border-line p-4 text-sm">
               <div className="font-semibold">Ask Foredock</div>
               <p className="mt-2 text-muted">
                 The assistant only answers signed-in users. Set <code>APP_ACCESS_KEY</code> (or personal keys in <code>APP_USERS</code>) on
@@ -182,16 +247,21 @@ export default function App() {
           )}
         </div>
       )}
+      {/* On phones the assistant opens from a floating button; it steps aside while a case is open so it never covers an approve button. */}
       <button
+        hidden={!!opened}
         onClick={() => setAsk(!ask)}
         aria-expanded={ask}
         aria-label={ask ? "Close Ask Foredock" : "Open Ask Foredock, the question and voice assistant"}
-        className="fixed bottom-5 right-5 z-30 flex items-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-semibold text-white shadow-xl hover:bg-black"
+        className="fixed bottom-4 right-4 z-30 flex items-center gap-2 rounded-full bg-accent-600 px-5 py-3 text-sm font-semibold text-white shadow-xl hover:bg-accent-700 sm:hidden [&[hidden]]:hidden"
       >
-        <span className={`h-2.5 w-2.5 rounded-full bg-brand ${ask ? "animate-pulse" : ""}`} />
-        {ask ? "Close" : data.voice?.transcribe ? "Ask Foredock · voice" : "Ask Foredock"}
+        <Mic /> {ask ? "Close" : "Ask Foredock"}
       </button>
-      {error && <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-ink px-4 py-2 text-sm text-white">{error}</div>}
+      {error && (
+        <div role="alert" className="fixed bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-xl bg-ink px-4 py-2 text-sm text-paper">
+          {error}
+        </div>
+      )}
       {opened && (
         <CasePanel
           item={opened}

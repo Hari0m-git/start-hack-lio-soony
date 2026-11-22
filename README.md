@@ -115,6 +115,13 @@ npm run dev      # http://localhost:5173, talks to the backend on port 8000
 npm run build    # writes the bundle to backend/app/static, which is committed
 ```
 
+The interface uses a warm pastel theme with a dark variant (system setting or the toggle in the top bar). The
+Today page opens on a small 3D model of the Hamburg dock, built in code with `three` 0.187.0 and
+`@react-three/fiber` 9.8.2 and driven by the forecast: a line that will stop glows and halts, missing copies stand at
+the dock as ghost boxes, and three views compare the ERP, the evidence and the outcome if the open actions land. The
+3D code is a separate chunk loaded after the data. With reduced motion switched on, or without WebGL, the same figures
+are shown as bars instead.
+
 ## Where things are
 
 ```

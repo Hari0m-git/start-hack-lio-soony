@@ -1,8 +1,55 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { CaseState } from "./api";
 
-export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <section className={`rounded-2xl border border-line bg-card shadow-card ${className}`}>{children}</section>;
+const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** A card. With `tilt` it leans up to three degrees towards the pointer. */
+export function Card({ children, className = "", tilt = false }: { children: ReactNode; className?: string; tilt?: boolean }) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!tilt || !el || calm() || !matchMedia("(hover: hover)").matches) return;
+    const move = (e: PointerEvent) => {
+      const r = el.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width - 0.5;
+      const y = (e.clientY - r.top) / r.height - 0.5;
+      el.style.transform = `perspective(900px) rotateX(${(-y * 3).toFixed(2)}deg) rotateY(${(x * 3).toFixed(2)}deg)`;
+    };
+    const leave = () => (el.style.transform = "");
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerleave", leave);
+    return () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerleave", leave);
+    };
+  }, [tilt]);
+  return (
+    <section ref={ref} className={`rise rounded-2xl border border-line bg-card shadow-card transition-transform duration-300 ease-out ${className}`}>
+      {children}
+    </section>
+  );
+}
+
+/** A number that counts to its new value once, instead of jumping. */
+export function useCountUp(target: number, ms = 400): number {
+  const [shown, setShown] = useState(target);
+  const from = useRef(target);
+  useEffect(() => {
+    if (calm() || from.current === target) return setShown(target);
+    const start = performance.now();
+    const begin = from.current;
+    let frame = 0;
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / ms);
+      const value = begin + (target - begin) * (1 - (1 - t) ** 3);
+      from.current = value;
+      setShown(value);
+      if (t < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [target, ms]);
+  return Math.round(shown);
 }
 
 export function Label({ children }: { children: ReactNode }) {
@@ -11,10 +58,10 @@ export function Label({ children }: { children: ReactNode }) {
 
 type Tone = "bad" | "warn" | "good" | "neutral";
 const TONES: Record<Tone, string> = {
-  bad: "bg-bad-soft text-bad",
-  warn: "bg-warn-soft text-warn",
-  good: "bg-good-soft text-good",
-  neutral: "bg-paper text-muted",
+  bad: "bg-bad-soft text-bad-ink ring-1 ring-bad/20",
+  warn: "bg-warn-soft text-warn-ink",
+  good: "bg-good-soft text-good-ink",
+  neutral: "bg-accent-soft text-ink-2",
 };
 
 export function Chip({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
@@ -50,10 +97,10 @@ export function Button({
 }) {
   const style =
     kind === "primary"
-      ? "bg-accent text-white hover:bg-black disabled:bg-[#9a9da5]"
-      : "border border-line bg-card text-ink hover:bg-paper disabled:text-muted";
+      ? "bg-accent-600 text-white hover:bg-accent-700 disabled:opacity-50"
+      : "border border-line bg-card text-ink hover:bg-accent-soft disabled:text-muted";
   return (
-    <button onClick={onClick} disabled={disabled} className={`rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${style}`}>
+    <button onClick={onClick} disabled={disabled} className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors duration-200 ${style}`}>
       {children}
     </button>
   );

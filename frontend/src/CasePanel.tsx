@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { editDraft, fileUrl, reworkCase, sendMessage, type Case, type Finding, type Message } from "./api";
 import { clock, fileName, money, num, when } from "./format";
+import { FlipEvidence } from "./Extras";
 import { Button, Chip, Label, StateChip } from "./ui";
 
 const TOOL_NAMES: Record<string, string> = {
@@ -34,7 +35,7 @@ function EvidenceLinks({ paths }: { paths: string[] }) {
           target="_blank"
           rel="noreferrer"
           title={p}
-          className="rounded-md border border-line bg-paper px-2 py-1 text-xs text-accent hover:underline"
+          className="rounded-md border border-line bg-paper px-2 py-1 text-xs text-accent-ink hover:underline"
         >
           {fileName(p)}
         </a>
@@ -77,7 +78,7 @@ function Draft({ message, onChanged }: { message: Message; onChanged: () => void
               : "Commits money or terms · only goes out when you approve"}
           </Label>
           {message.held_because && message.commits === "nothing" && (
-            <div className="mt-1 text-xs text-warn">Not sent automatically: {message.held_because}</div>
+            <div className="mt-1 text-xs text-warn-ink">Not sent automatically: {message.held_because}</div>
           )}
           <div className="mt-1 text-sm">
             <span className="font-medium">{message.counterpart_name}</span>{" "}
@@ -85,7 +86,7 @@ function Draft({ message, onChanged }: { message: Message; onChanged: () => void
           </div>
         </div>
         {message.body_english && !editing && (
-          <button className="text-xs text-accent hover:underline" onClick={() => setShowOriginal(!showOriginal)}>
+          <button className="text-xs text-accent-ink hover:underline" onClick={() => setShowOriginal(!showOriginal)}>
             {showOriginal ? "Show English" : `Show original (${message.language ?? "as sent"})`}
           </button>
         )}
@@ -113,11 +114,11 @@ function Draft({ message, onChanged }: { message: Message; onChanged: () => void
         </div>
       )}
       {blanks && (
-        <div className="mt-3 rounded-lg bg-warn-soft px-3 py-2 text-sm text-warn">
+        <div className="mt-3 rounded-lg bg-warn-soft px-3 py-2 text-sm text-warn-ink">
           This message still has blanks in square brackets. Fill them in under "Edit wording" before it can be sent.
         </div>
       )}
-      {error && <div className="mt-3 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">{error}</div>}
+      {error && <div className="mt-3 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad-ink">{error}</div>}
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {editing ? (
           <>
@@ -163,6 +164,7 @@ function Mail({ message }: { message: Message }) {
           </div>
           <div className="truncate text-sm font-medium">{message.subject}</div>
         </div>
+        <span className="shrink-0">
         <Chip tone={ours ? "neutral" : "good"}>
           {!ours
             ? message.sent_by === "auto" ? "Automatic reply" : "Received"
@@ -170,6 +172,7 @@ function Mail({ message }: { message: Message }) {
             : message.sent_by === "other" ? "Not sent by the agents"
             : message.approved_by ? `Approved by ${message.approved_by}` : "Approved and sent"}
         </Chip>
+        </span>
       </button>
       {r && (
         <div className="mt-3 rounded-lg bg-good-soft/60 p-3 text-sm">
@@ -182,7 +185,7 @@ function Mail({ message }: { message: Message }) {
               {d.firm ? "firm" : `not firm: ${d.condition ?? "condition open"}`}
             </p>
           ))}
-          {r.needs_from_us.length > 0 && <p className="mt-1 text-warn">They need from us: {r.needs_from_us.join("; ")}</p>}
+          {r.needs_from_us.length > 0 && <p className="mt-1 text-warn-ink">They need from us: {r.needs_from_us.join("; ")}</p>}
         </div>
       )}
       {open && <pre className="mt-3 whitespace-pre-wrap font-sans text-sm leading-relaxed text-ink/80">{message.body}</pre>}
@@ -226,9 +229,9 @@ export function CasePanel({
   };
 
   return (
-    <div className="fixed inset-0 z-20 flex justify-end bg-ink/30" onClick={onClose}>
+    <div className="fixed inset-0 z-20 flex justify-end bg-black/40" onClick={onClose}>
       <aside className="h-full w-full max-w-2xl overflow-y-auto bg-paper shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-line bg-paper/95 px-6 py-4 backdrop-blur">
+        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 glass border-b border-line px-4 py-4 sm:px-6">
           <div>
             <div className="text-xs text-muted">
               {item.description} · {item.material_id}
@@ -243,10 +246,10 @@ export function CasePanel({
           </button>
         </header>
 
-        <div className="space-y-6 px-6 py-5">
+        <div className="space-y-6 px-4 py-5 sm:px-6">
           {item.needs_human && (
             <div className="rounded-xl border-2 border-bad/40 bg-bad-soft p-4 text-sm">
-              <div className="font-semibold text-bad">The agent has handed this case to you</div>
+              <div className="font-semibold text-bad-ink">The agent has handed this case to you</div>
               <p className="mt-1 text-ink">{item.needs_human}</p>
               <p className="mt-1 text-muted">Nothing more is sent on this case until a person has decided.</p>
             </div>
@@ -257,7 +260,7 @@ export function CasePanel({
           </div>
 
           {rec && (
-            <div className="rounded-xl bg-accent p-5 text-white">
+            <div className="rounded-xl bg-accent-600 p-5 text-white">
               <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/70">The agent suggests</div>
               <div className="mt-1 text-[17px] font-semibold leading-snug">{item.card?.suggestion ?? rec.title}</div>
               <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
@@ -296,7 +299,7 @@ export function CasePanel({
           )}
 
           {item.checks.length > 0 && (
-            <div className="rounded-lg bg-warn-soft p-3 text-sm text-warn">
+            <div className="rounded-lg bg-warn-soft p-3 text-sm text-warn-ink">
               <div className="font-medium">Check before you rely on this</div>
               {item.checks.map((c) => (
                 <div key={c}>• {c}</div>
@@ -338,10 +341,7 @@ export function CasePanel({
 
             <More title={`The proof (${proof.length} original files)`}>
               {findings.map((f) => (
-                <div key={f.key} className="mb-2">
-                  <div className="font-medium">{f.title}</div>
-                  <div className="text-muted">{f.detail}</div>
-                </div>
+                <FlipEvidence key={f.key} finding={f} />
               ))}
               <EvidenceLinks paths={proof} />
             </More>

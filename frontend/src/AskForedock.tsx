@@ -70,32 +70,32 @@ export function AskForedock({ caseKey, onOpen, verified, availability }: {
   }
 
   return (
-    <section className="rounded-2xl border border-line bg-white p-4">
+    <section className="glass rounded-2xl border border-line p-4">
       <div className="flex items-center justify-between gap-3">
         <button type="button" aria-expanded={open} className="font-semibold" onClick={() => { if (open) { voice.cancel(); cancelTurn(); } setOpen(!open); }}>Ask Foredock</button>
         <span className="text-xs text-muted">{verified ? "Personal key · Read only" : "Shared key · Read only"}</span>
       </div>
       {open && <div className="mt-4 grid gap-3">
-        <button type="button" className="justify-self-end text-sm text-accent" onClick={() => {
+        <button type="button" className="justify-self-end text-sm text-accent-ink" onClick={() => {
           cancelTurn(); voice.cancel(); setEntries([]); setDraft(""); setDetected(null); setError("");
         }}>New chat</button>
         <div role="log" className="grid max-h-80 gap-3 overflow-y-auto">
           {entries.map(({ question, reply }) => <div key={reply.answer_id} className="grid gap-2">
-            <p className="rounded-lg bg-line/30 p-2">{question}</p>
+            <p className="justify-self-end rounded-2xl rounded-br-md bg-accent-soft px-3 py-2">{question}</p>
             <p className="whitespace-pre-wrap">{reply.answer}</p>
-            {availability.transcribe && <button type="button" className="justify-self-start text-sm text-accent"
+            {availability.transcribe && <button type="button" className="justify-self-start text-sm text-accent-ink"
               disabled={voice.stage !== "idle" || busy}
               onClick={() => void voice.play(reply, reply.language ?? language, availability.speak)}>Play answer</button>}
-            {reply.evidence.map((path) => <a key={path} className="text-sm text-accent underline"
+            {reply.evidence.map((path) => <a key={path} className="text-sm text-accent-ink underline"
               href={fileUrl(path)} target="_blank" rel="noreferrer">{path}</a>)}
-            {reply.cases.map((key) => <button key={key} type="button" className="justify-self-start text-sm text-accent"
+            {reply.cases.map((key) => <button key={key} type="button" className="justify-self-start text-sm text-accent-ink"
               onClick={() => onOpen(key)}>Open {key}</button>)}
           </div>)}
         </div>
         <form className="grid gap-2" onSubmit={(event) => { event.preventDefault(); void submit(draft, language ?? detected, false); }}>
           <label className="text-sm" htmlFor="ask-foredock-question">Question</label>
           <textarea id="ask-foredock-question" value={draft} maxLength={2000} disabled={busy}
-            className="rounded-md border border-line p-2" onChange={(event) => setDraft(event.target.value)} />
+            className="rounded-xl border border-line bg-card p-2.5" onChange={(event) => setDraft(event.target.value)} />
           <label className="text-sm">
             Reply language{" "}
             <select value={language ?? ""} disabled={voice.stage !== "idle" || busy} className="rounded border border-line p-1"
@@ -107,11 +107,11 @@ export function AskForedock({ caseKey, onOpen, verified, availability }: {
           {detected && !language && <p role="status" className="text-sm text-muted">Detected {LANGUAGES[detected]}</p>}
           <div className="flex flex-wrap items-center gap-3">
             {availability.transcribe && voice.stage === "idle" && <>
-              <button type="button" disabled={busy} className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" onClick={() => startRecording(false)}>🎙 Ask by voice</button>
+              <button type="button" disabled={busy} className="rounded-full bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" onClick={() => startRecording(false)}>🎙 Ask by voice</button>
               <button type="button" disabled={busy} className="rounded-full border border-line px-4 py-2 text-sm disabled:opacity-50" onClick={() => startRecording(true)}>Transcribe</button>
             </>}
             {voice.stage === "opening" && <span role="status">Waiting for microphone…</span>}
-            {voice.stage === "recording" && !transcribeOnly && <span role="status" className="flex items-center gap-2 text-sm font-medium text-bad"><span className="h-2.5 w-2.5 animate-pulse rounded-full bg-bad" />Listening… pause to send</span>}
+            {voice.stage === "recording" && !transcribeOnly && <span role="status" className="flex items-center gap-2 text-sm font-medium text-bad-ink"><span className="wave" aria-hidden><i /><i /><i /><i /></span>Listening… pause to send</span>}
             {voice.stage === "recording" && <button type="button" onClick={voice.stopRecording}>
               {transcribeOnly ? "Stop and transcribe" : "Stop and ask"}
             </button>}
@@ -120,11 +120,11 @@ export function AskForedock({ caseKey, onOpen, verified, availability }: {
             {voice.stage !== "idle" && <button type="button" onClick={voice.cancel}>
               {voice.stage === "playing" ? "Stop playback" : "Cancel audio"}
             </button>}
-            <button className="rounded-md bg-ink px-3 py-2 text-sm text-white disabled:opacity-50" disabled={busy || voice.stage !== "idle" || !draft.trim()}>Send</button>
+            <button className="rounded-xl bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={busy || voice.stage !== "idle" || !draft.trim()}>Send</button>
             {busy && <button type="button" onClick={cancelTurn}>Cancel</button>}
           </div>
         </form>
-        {error && <p role="alert" className="text-sm text-bad">{error}</p>}
+        {error && <p role="alert" className="text-sm text-bad-ink">{error}</p>}
       </div>}
     </section>
   );

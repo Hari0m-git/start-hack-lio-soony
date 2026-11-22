@@ -1,5 +1,6 @@
 import type { ComponentForecast, Overview } from "./api";
 import { clock, fileName, num } from "./format";
+import { AgentLoop } from "./Extras";
 import { Card, Chip, Label } from "./ui";
 
 function Coverage({ c }: { c: ComponentForecast }) {
@@ -21,7 +22,7 @@ export function Parts({ data, onOpen }: { data: Overview; onOpen: (key: string) 
   return (
     <div className="space-y-6">
       <section>
-        <h1 className="text-2xl font-semibold tracking-tight">Parts for the copies still to pack</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight">Parts for the copies still to pack</h1>
         <p className="mt-1 text-[15px] text-muted">
           Each bar compares what is needed (the black mark) with what is really there. Green is on site, light green is on its way, red is missing.
         </p>
@@ -41,14 +42,14 @@ export function Parts({ data, onOpen }: { data: Overview; onOpen: (key: string) 
                   <span>needed {num(c.need)}</span>
                   <span>on site {num(c.usable_stock)}</span>
                   {c.inbound_counted > 0 && <span>on its way {num(c.inbound_counted)}</span>}
-                  {wrong && <span className="text-bad">the system shows {num(c.erp_stock)}</span>}
-                  {c.inbound_needing_action > 0 && <span className="text-warn">{num(c.inbound_needing_action)} more if someone acts</span>}
+                  {wrong && <span className="text-bad-ink">the system shows {num(c.erp_stock)}</span>}
+                  {c.inbound_needing_action > 0 && <span className="text-warn-ink">{num(c.inbound_needing_action)} more if someone acts</span>}
                 </div>
               </div>
               <div className="flex items-center gap-2 sm:justify-end">
                 {c.gap > 0 ? <Chip tone="bad">{num(c.gap)} missing</Chip> : wrong ? <Chip tone="warn">enough, but the system is wrong</Chip> : <Chip tone="good">enough</Chip>}
                 {cases.has(c.material_id) && (
-                  <button className="text-sm text-accent hover:underline" onClick={() => onOpen(`part:${c.material_id}`)}>
+                  <button className="text-sm text-accent-ink hover:underline" onClick={() => onOpen(`part:${c.material_id}`)}>
                     Open ›
                   </button>
                 )}
@@ -76,9 +77,9 @@ export function Parts({ data, onOpen }: { data: Overview; onOpen: (key: string) 
 }
 
 const KINDS: Record<Overview["activity"][number]["kind"], { label: string; dot: string }> = {
-  files: { label: "New files", dot: "bg-accent" },
+  files: { label: "New files", dot: "bg-accent-600" },
   reply: { label: "Supplier answered", dot: "bg-good" },
-  sent_by_agent: { label: "Agent asked", dot: "bg-ink/60" },
+  sent_by_agent: { label: "Agent asked", dot: "bg-sky" },
   sent_by_human: { label: "You approved", dot: "bg-warn" },
   handover: { label: "Handed to you", dot: "bg-bad" },
 };
@@ -87,7 +88,7 @@ export function Activity({ data, onOpen }: { data: Overview; onOpen: (key: strin
   return (
     <div className="space-y-6">
       <section>
-        <h1 className="text-2xl font-semibold tracking-tight">What happened</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight">What happened</h1>
         <p className="mt-1 text-[15px] text-muted">Everything the agents noticed and did, newest first. Times are Hamburg time.</p>
       </section>
       <Card className="p-5">
@@ -102,7 +103,7 @@ export function Activity({ data, onOpen }: { data: Overview; onOpen: (key: strin
               <div className="text-[15px]">
                 {a.text}
                 {a.case_key && (
-                  <button className="ml-2 text-sm text-accent hover:underline" onClick={() => onOpen(a.case_key!)}>
+                  <button className="ml-2 text-sm text-accent-ink hover:underline" onClick={() => onOpen(a.case_key!)}>
                     Open ›
                   </button>
                 )}
@@ -123,24 +124,30 @@ export function Agents({ data }: { data: Overview }) {
     ["Send on their own", "Questions, reminders and requests for confirmation. Each one is checked twice before it leaves and goes only to a supplier contact from Soony's own data."],
     ["Wait for a person", "Anything that places, releases or changes an order, or accepts a price or a condition. That is one click for the person Soony's approval policy names."],
     ["Hand over", "A case with no route left, or one the agent failed to work twice. It stops there and tells you why."],
-    ["Stop by themselves", `After three unattended messages to one contact, and when the day's budget of $${data.spend.budget_usd.toFixed(0)} is used up.`],
+    ["Stop by themselves", `After three unattended messages to one contact, and when the day's budget of $${String(data.spend.budget_usd)} is used up.`],
   ];
   return (
     <div className="space-y-6">
       <section>
-        <h1 className="text-2xl font-semibold tracking-tight">The agents</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight">The agents</h1>
         <p className="mt-1 text-[15px] text-muted">What they have done today, what it cost, and what they are allowed to do without you.</p>
       </section>
+      <Card className="p-5">
+        <Label>One pass, step by step</Label>
+        <div className="mt-4">
+          <AgentLoop data={data} />
+        </div>
+      </Card>
       <div className="grid gap-4 sm:grid-cols-4">
         {[
           ["Files watched", num(data.files), `${num(data.documents_read)} documents read`],
           ["Problems found", String(data.agent_work.findings), "that the system did not show"],
           ["Messages", String(data.agent_work.sent_by_agents + data.agent_work.approved_by_people), `${data.agent_work.sent_by_agents} by agents, ${data.agent_work.approved_by_people} approved by you`],
-          ["Cost today", `$${data.spend.today_usd.toFixed(2)}`, `limit $${data.spend.budget_usd.toFixed(0)} a day`],
+          ["Cost today", `$${data.spend.today_usd.toFixed(2)}`, `limit $${String(data.spend.budget_usd)} a day`],
         ].map(([label, value, hint]) => (
           <Card key={label} className="p-4">
             <Label>{label}</Label>
-            <div className="mt-1 text-3xl font-semibold tabular-nums tracking-tight">{value}</div>
+            <div className="mt-1 font-display text-[40px] font-semibold leading-none tracking-tight">{value}</div>
             <div className="mt-0.5 text-xs text-muted">{hint}</div>
           </Card>
         ))}
@@ -158,7 +165,7 @@ export function Agents({ data }: { data: Overview }) {
                   </span>
                 </div>
                 <div className="mt-1 h-2 rounded-full bg-line">
-                  <div className="h-2 rounded-full bg-accent" style={{ width: `${(100 * k.usd) / top}%` }} />
+                  <div className="h-2 rounded-full bg-accent-600" style={{ width: `${(100 * k.usd) / top}%` }} />
                 </div>
               </div>
             ))}
@@ -195,7 +202,7 @@ export function Agents({ data }: { data: Overview }) {
           {data.last_sync && ` Last check of the portal: ${clock(data.last_sync.started_at)}.`}
           {data.mail_address && ` Mailbox: ${data.mail_address}.`}
         </p>
-        {data.loop.last_tick?.errors?.length ? <p className="mt-2 text-bad">Last pass reported: {data.loop.last_tick.errors.join("; ")}</p> : null}
+        {data.loop.last_tick?.errors?.length ? <p className="mt-2 text-bad-ink">Last pass reported: {data.loop.last_tick.errors.join("; ")}</p> : null}
         {data.needs_review.length > 0 && (
           <div className="mt-3">
             <div className="font-medium">Documents the agents were not sure they read correctly</div>

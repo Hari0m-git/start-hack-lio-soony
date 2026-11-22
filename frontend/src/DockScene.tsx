@@ -10,14 +10,14 @@ const SPACING = 1.25;
 const BOXES = 8;
 const MAX_GHOSTS = 12;
 
-type Palette = Record<"ground" | "wall" | "roof" | "belt" | "accent" | "bad" | "lilac" | "orchid" | "ink", string>;
+type Palette = Record<"ground" | "wall" | "roof" | "belt" | "accent" | "bad" | "sky" | "peach" | "ink", string>;
 
 function readPalette(): Palette {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string) => css.getPropertyValue(name).trim();
   return {
-    ground: v("--color-accent-soft"), wall: v("--color-solid"), roof: v("--color-lilac"), belt: v("--color-line"),
-    accent: v("--color-accent"), bad: v("--color-bad"), lilac: v("--color-lilac"), orchid: v("--color-orchid"), ink: v("--color-ink-2"),
+    ground: v("--color-accent-soft"), wall: v("--color-solid"), roof: v("--color-sky"), belt: v("--color-line"),
+    accent: v("--color-accent"), bad: v("--color-bad"), sky: v("--color-sky"), peach: v("--color-peach"), ink: v("--color-ink-2"),
   };
 }
 
@@ -103,7 +103,7 @@ function Line({ z, line, palette, ghostMaterial }: { z: number; line: DockLine; 
         </mesh>
         <mesh position={[1.55, 0.72, 0]}>
           <boxGeometry args={[0.7, 0.86, 1.05]} />
-          <meshStandardMaterial color={palette.lilac} roughness={0.7} />
+          <meshStandardMaterial color={palette.sky} roughness={0.7} />
         </mesh>
         {[-0.7, 0.6, 1.55].map((x) => (
           <mesh key={x} position={[x, 0.2, 0]}>
@@ -129,7 +129,7 @@ function Container({ arriving, palette }: { arriving: boolean; palette: Palette 
     <group ref={ref} position={[initial.current, 0, 3.9]} visible={initial.current > -11.5}>
       <mesh position={[0, 0.85, 0]}>
         <boxGeometry args={[2.6, 1.1, 1.05]} />
-        <meshStandardMaterial color={palette.orchid} roughness={0.7} />
+        <meshStandardMaterial color={palette.peach} roughness={0.7} />
       </mesh>
       <mesh position={[1.7, 0.7, 0]}>
         <boxGeometry args={[0.7, 0.82, 1]} />
@@ -187,7 +187,7 @@ export default function DockScene({ lines, container, active }: { lines: DockLin
       <Rig />
       <ambientLight intensity={1.7} />
       <directionalLight position={[-6, 12, 4]} intensity={2.3} />
-      <directionalLight position={[8, 4, -6]} intensity={0.9} color={palette.lilac} />
+      <directionalLight position={[8, 4, -6]} intensity={0.9} color={palette.sky} />
       <mesh position={[0.4, -0.15, 0.2]}>
         <boxGeometry args={[20.4, 0.3, 8.6]} />
         <meshStandardMaterial color={palette.ground} roughness={1} />

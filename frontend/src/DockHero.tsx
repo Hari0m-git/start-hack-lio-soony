@@ -138,7 +138,7 @@ export function DockHero({ data }: { data: Overview }) {
                 </div>
                 <div className="mt-1.5 flex h-2.5 overflow-hidden rounded-full bg-accent-soft" role="img" aria-label={`${num(p.packed)} packed, ${num(p.packed_by_deadline)} still feasible, ${num(p.short)} short`}>
                   <div className="bg-accent-600 transition-[width] duration-500 ease-out" style={{ width: share(p.packed) }} />
-                  <div className="bg-lilac transition-[width] duration-500 ease-out" style={{ width: share(p.packed_by_deadline) }} />
+                  <div className="bg-sky transition-[width] duration-500 ease-out" style={{ width: share(p.packed_by_deadline) }} />
                   <div className="bg-bad transition-[width] duration-500 ease-out" style={{ width: share(p.short) }} />
                 </div>
                 <div className={`mt-1.5 text-sm ${p.short > 0 ? "text-bad-ink" : "text-good-ink"}`}>
@@ -153,7 +153,7 @@ export function DockHero({ data }: { data: Overview }) {
           })}
 
           <p className="mt-auto text-xs text-muted">
-            {meta.note} <span className="whitespace-nowrap">Dark: packed · lilac: still feasible · rose: short.</span>
+            {meta.note} <span className="whitespace-nowrap">Dark: packed · blue: still feasible · coral: short.</span>
           </p>
         </div>
       </div>

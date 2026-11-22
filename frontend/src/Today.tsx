@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Case, Overview } from "./api";
 import { PackChart } from "./Chart";
+import { DockHero } from "./DockHero";
 import { clock, money, num, when } from "./format";
 import { Button, Card, Chip, Label, StateChip } from "./ui";
 
@@ -9,9 +10,9 @@ const editionName = (name: string | null, id: string) => name?.replace(/^.*? –
 
 function Kpi({ label, value, hint, tone = "text-ink" }: { label: string; value: string; hint: string; tone?: string }) {
   return (
-    <Card className="p-4">
+    <Card tilt className="p-5">
       <Label>{label}</Label>
-      <div className={`mt-1 text-3xl font-semibold tabular-nums tracking-tight ${tone}`}>{value}</div>
+      <div className={`mt-1 font-display text-[44px] font-semibold leading-none tracking-tight ${tone}`}>{value}</div>
       <div className="mt-0.5 text-xs text-muted">{hint}</div>
     </Card>
   );
@@ -21,7 +22,7 @@ function HowTo() {
   const [hidden, setHidden] = useState(() => localStorage.getItem(HELP_KEY) === "1");
   if (hidden)
     return (
-      <button className="text-xs text-accent hover:underline" onClick={() => (localStorage.removeItem(HELP_KEY), setHidden(false))}>
+      <button className="text-xs text-accent-ink hover:underline" onClick={() => (localStorage.removeItem(HELP_KEY), setHidden(false))}>
         How do I read this page?
       </button>
     );
@@ -41,7 +42,7 @@ function HowTo() {
       <div className="mt-3 grid gap-4 sm:grid-cols-3">
         {steps.map(([n, title, text]) => (
           <div key={n} className="flex gap-3">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold text-white">{n}</div>
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-600 text-sm font-semibold text-white">{n}</div>
             <div>
               <div className="text-sm font-medium">{title}</div>
               <div className="text-sm text-muted">{text}</div>
@@ -103,7 +104,7 @@ function QuietRow({ item, onOpen }: { item: Case; onOpen: () => void }) {
         </div>
         <div className="truncate text-sm text-muted">{status}</div>
       </div>
-      <span className="shrink-0 text-sm text-accent">Open ›</span>
+      <span className="shrink-0 text-sm text-accent-ink">Open ›</span>
     </button>
   );
 }
@@ -121,7 +122,7 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
   return (
     <div className="space-y-6">
       <section>
-        <h1 className={`text-2xl font-semibold leading-tight tracking-tight sm:text-[32px] ${short.length ? "text-bad" : "text-good"}`}>
+        <h1 className={`font-display text-2xl font-semibold leading-tight tracking-tight sm:text-[32px] ${short.length ? "text-bad-ink" : "text-good-ink"}`}>
           {short.length
             ? `As things stand, ${short.map((p) => `${num(p.short)} ${editionName(p.name, p.product_id)}`).join(" and ")} copies will miss the launch.`
             : "Every copy will be packed before the trucks leave."}
@@ -133,13 +134,15 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
         </p>
       </section>
 
+      <DockHero data={data} />
+
       <div className="grid gap-4 sm:grid-cols-3">
-        <Kpi label="Copies at risk" value={num(atRisk)} hint="will not be packed if nobody acts" tone={atRisk ? "text-bad" : "text-good"} />
+        <Kpi label="Copies at risk" value={num(atRisk)} hint="will not be packed if nobody acts" tone={atRisk ? "text-bad-ink" : "text-good-ink"} />
         <Kpi
           label="Waiting for you"
           value={String(yours.length)}
           hint={yours.length ? "decisions only a person may take" : "nothing needs you right now"}
-          tone={yours.length ? "text-bad" : "text-good"}
+          tone={yours.length ? "text-bad-ink" : "text-good-ink"}
         />
         <Kpi
           label="Done by the agents"
@@ -150,7 +153,7 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
 
       {data.foreign_mail.length > 0 && (
         <Card className="border-l-4 border-l-bad p-4 text-sm">
-          <div className="font-semibold text-bad">
+          <div className="font-semibold text-bad-ink">
             {data.foreign_mail.length} message{data.foreign_mail.length > 1 ? "s" : ""} left this mailbox that the agents did not send
           </div>
           <p className="mt-1 text-muted">
@@ -163,7 +166,7 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
       <HowTo />
 
       <section>
-        <h2 className="text-lg font-semibold">What needs you now</h2>
+        <h2 className="font-display text-lg font-semibold">What needs you now</h2>
         <div className="mt-3 space-y-4">
           {yours.map((c) => (
             <ActionCard key={c.key} item={c} onOpen={() => onOpen(c.key)} />
@@ -178,7 +181,7 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
 
       {theirs.length > 0 && (
         <section>
-          <h2 className="text-lg font-semibold">The agents are handling</h2>
+          <h2 className="font-display text-lg font-semibold">The agents are handling</h2>
           <Card className="mt-3 divide-y divide-line overflow-hidden">
             {theirs.map((c) => (
               <QuietRow key={c.key} item={c} onOpen={() => onOpen(c.key)} />
@@ -189,7 +192,7 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
 
       {data.cases.length > 0 && (
         <section>
-          <h2 className="text-lg font-semibold">What each fix is worth</h2>
+          <h2 className="font-display text-lg font-semibold">What each fix is worth</h2>
           <p className="mt-1 text-sm text-muted">A copy needs every part, so the fixes do not simply add up.</p>
           <Card className="mt-3 divide-y divide-line">
             {[...data.cases]
@@ -205,7 +208,7 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
               ))}
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 px-5 py-3 text-sm">
               <span className="font-semibold">All of them together</span>
-              <span className={`font-semibold ${data.plan.short_if_all_solved ? "text-warn" : "text-good"}`}>
+              <span className={`font-semibold ${data.plan.short_if_all_solved ? "text-warn-ink" : "text-good-ink"}`}>
                 {data.plan.short_if_all_solved == null
                   ? "not known"
                   : data.plan.short_if_all_solved > 0
@@ -218,13 +221,13 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
       )}
 
       <section>
-        <h2 className="text-lg font-semibold">Will we make it?</h2>
+        <h2 className="font-display text-lg font-semibold">Will we make it?</h2>
         <div className="mt-3 grid gap-4 lg:grid-cols-2">
           {f.products.map((p) => (
             <Card key={p.product_id} className="p-5">
               <div className="flex items-baseline justify-between gap-3">
                 <div className="font-semibold">{editionName(p.name, p.product_id)}</div>
-                <div className={`text-sm font-semibold ${p.short > 0 ? "text-bad" : "text-good"}`}>
+                <div className={`text-sm font-semibold ${p.short > 0 ? "text-bad-ink" : "text-good-ink"}`}>
                   {p.short > 0 ? `${num(p.short)} copies short` : `done ${when(p.finished_at)}`}
                 </div>
               </div>
@@ -235,7 +238,7 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
                 <PackChart productId={p.product_id} evidence={f} erp={data.erp_forecast} />
               </div>
               {p.first_stop && p.short > 0 && (
-                <p className="mt-3 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
+                <p className="mt-3 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad-ink">
                   The line stops {when(p.first_stop.at)} when {partName.get(p.first_stop.material_id) ?? p.first_stop.material_id} runs out.
                 </p>
               )}
