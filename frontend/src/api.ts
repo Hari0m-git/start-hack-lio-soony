@@ -96,6 +96,8 @@ export type Message = {
 
 export type CaseState = "needs_human" | "needs_approval" | "supplier_answered" | "waiting_for_supplier" | "proposed";
 
+export type ConcessionApproval = { batch: string; quantity: number; recorded_by: string; recorded_at: string };
+
 export type Case = {
   key: string;
   material_id: string;
@@ -114,6 +116,8 @@ export type Case = {
   recommended_option: number;
   ruled_out: string[];
   approval: { required_role: string; person: string | null; basis: string; note: string | null } | null;
+  concession_target?: { batch: string; held_quantity: number; suggested_quantity: number } | null;
+  concession_approval?: ConcessionApproval | null;
   open_questions: string[];
   checks: string[];
   evidence: string[];
@@ -121,11 +125,27 @@ export type Case = {
   messages: Message[];
 };
 
+export const needsCaseAttention = (item: Case) =>
+  item.state === "needs_approval" || item.state === "needs_human" || (!!item.concession_target && !item.concession_approval);
+
+type LatePart = { material_id: string; description: string; expected_date: string };
+
 export type Overview = {
   now: string;
   forecast: Forecast;
   erp_forecast: Forecast;
   forecast_if_acted: Forecast;
+  forecast_with_concessions?: Forecast | null;
+  recovery_comparison?: {
+    without_supplier_commitments: number;
+    late_parts: LatePart[];
+  } | null;
+  demo_recovery?: {
+    forecast: Forecast;
+    targets: { material_id: string; description: string; ready_at: string }[];
+    late_parts: LatePart[];
+  } | null;
+  recorded_releases?: { case_key: string; description: string; quantity: number; recorded_at: string; expected_at: string }[];
   priority: { order: string[]; basis: string | null; path: string | null };
   findings: Finding[];
   cases: Case[];
@@ -135,7 +155,7 @@ export type Overview = {
   documents_read: number;
   needs_review: { path: string; detail: string }[];
   spend: { today_usd: number; budget_usd: number; by_kind: { kind: string; usd: number; calls: number }[] };
-  activity: { at: string | null; kind: "files" | "reply" | "sent_by_agent" | "sent_by_human" | "foreign" | "handover"; case_key: string | null; text: string; detail: string | null }[];
+  activity: { at: string | null; kind: "files" | "reply" | "sent_by_agent" | "sent_by_human" | "foreign" | "handover" | "concession_recorded"; case_key: string | null; text: string; detail: string | null }[];
   me: { name: string | null; role: "viewer" | "approver" | "admin"; limit_eur: number | null; verified: boolean };
   audit: { ts: string; actor: string; action: string; case_key: string | null; detail: string | null }[];
   plan: { short_now: number; short_if_all_solved: number | null };
@@ -182,6 +202,8 @@ export const sendMessage = (id: number, approver: string) =>
 export const editDraft = (id: number, subject: string, body: string) =>
   call(`/api/messages/${id}`, { method: "PATCH", body: JSON.stringify({ subject, body }) });
 export const reworkCase = (materialId: string) => call(`/api/cases/${materialId}/rework`, { method: "POST" });
+export const recordConcession = (materialId: string, input: { batch: string; quantity: number; case_updated_at: string }) =>
+  call<ConcessionApproval>(`/api/cases/${encodeURIComponent(materialId)}/concession-approval`, { method: "POST", body: JSON.stringify(input) });
 export const fileUrl = (path: string) => `/api/file?path=${encodeURIComponent(path)}&key=${encodeURIComponent(accessKey())}`;
 
 export type ReplyLanguage = "en" | "de" | "zh" | "pl" | "ko";

@@ -1,6 +1,6 @@
 import { AskForedock } from "./AskForedock";
-import { useCallback, useEffect, useState } from "react";
-import { accessKey, getOverview, setAccessKey, Unauthorized, type Overview } from "./api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { accessKey, getOverview, needsCaseAttention, setAccessKey, Unauthorized, type Overview } from "./api";
 import { CasePanel } from "./CasePanel";
 import { countdown, forecastTime, hoursBetween } from "./format";
 import { Activity, Agents, Parts } from "./Pages";
@@ -137,12 +137,17 @@ export default function App() {
   };
   const [ask, setAsk] = useState(false);
 
+  const requestId = useRef(0);
   const load = useCallback(async () => {
+    const id = ++requestId.current;
     try {
-      setData(await getOverview());
+      const overview = await getOverview();
+      if (id !== requestId.current) return;
+      setData(overview);
       setLocked(false);
       setError("");
     } catch (e) {
+      if (id !== requestId.current) return;
       if (e instanceof Unauthorized) setLocked(true);
       else setError(e instanceof Error ? e.message : "The desk cannot reach its server.");
     }
@@ -172,7 +177,7 @@ export default function App() {
     );
 
   const hoursLeft = hoursBetween(data.now, f.deadline);
-  const waiting = data.cases.filter((c) => c.state === "needs_approval" || c.state === "needs_human").length;
+  const waiting = data.cases.filter(needsCaseAttention).length;
   const opened = data.cases.find((c) => c.key === open);
   const loop = data.loop.running ? "Agents working" : data.loop.agents_on ? "Agents on" : "Agents off";
 
@@ -272,6 +277,7 @@ export default function App() {
           findings={data.findings.filter((x) => x.material_id === opened.material_id)}
           canEdit={data.me.role !== "viewer"}
           canSend={data.loop.agents_on && !!data.mail_address}
+          canRecordConcession={data.me.verified && data.me.role !== "viewer"}
           hasNamedUser={!!data.me.name}
           onClose={() => setOpen(null)}
           onChanged={load}

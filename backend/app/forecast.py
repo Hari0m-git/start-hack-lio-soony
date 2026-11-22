@@ -12,6 +12,8 @@ from app.truth import Assessment, Facts, _day, _num, load
 
 ARRIVAL_HOUR = 12  # assumed time of day a shipment reaches the dock when nobody has confirmed one
 STEP = timedelta(hours=1)
+LATEST_COMMITMENTS = """SELECT * FROM commitments c WHERE message_id = (
+    SELECT MAX(message_id) FROM commitments WHERE case_key = c.case_key AND material_id = c.material_id)"""
 
 
 def _moment(value) -> datetime | None:
@@ -72,12 +74,17 @@ def shift_windows(conn: sqlite3.Connection, launch: date) -> list[tuple[datetime
 
 
 def simulate(conn: sqlite3.Connection, assessment: Assessment, priority: list[str] | None = None,
-             trust_erp: bool = False, with_actions: bool = False, covered: frozenset[str] = frozenset()) -> dict:
+             trust_erp: bool = False, with_actions: bool = False, covered: frozenset[str] = frozenset(),
+             planned_releases: tuple[tuple[datetime, str, int], ...] = (), *,
+             include_commitments: bool = True, commitment_times: dict[int, datetime] | None = None) -> dict:
     """Pack hour by hour until the deadline.
 
     trust_erp     ignore the findings and count stock and inbound as the ERP shows them
     with_actions  also count inbound goods that only arrive if somebody acts (e.g. a container to collect)
     covered       parts assumed to be solved, to see what solving them is worth
+    planned_releases  conditional lots added at their estimated packing-release time
+    include_commitments  turn off supplier mail commitments for a comparison, not a historical replay
+    commitment_times  alternative usable times for identified commitments in a demo scenario
     """
     facts = Facts(conn)
     start, status = pack_status(conn)
@@ -130,14 +137,14 @@ def simulate(conn: sqlite3.Connection, assessment: Assessment, priority: list[st
     # Inbound: when each shipment can be counted on.
     arrivals, counted, at_risk, confirmed = [], defaultdict(float), defaultdict(float), defaultdict(float)
     # What suppliers have committed to by mail: the newest word per case and part replaces what the ERP expects.
-    promised = [] if trust_erp else conn.execute(
-        """SELECT * FROM commitments c WHERE message_id = (
-               SELECT MAX(message_id) FROM commitments WHERE case_key = c.case_key AND material_id = c.material_id)""").fetchall()
+    promised = conn.execute(LATEST_COMMITMENTS).fetchall() if include_commitments and not trust_erp else []
     superseded = {(c["material_id"], c["shipment_ref"]) for c in promised if c["shipment_ref"]}
     for c in promised:
         when = _moment(c["dock_at"])
         if c["material_id"] not in parts or not when:
             continue
+        if c["firm"] and commitment_times:
+            when = commitment_times.get(c["id"], when)
         if not c["firm"] and not with_actions:
             at_risk[c["material_id"]] += c["quantity"]
         elif when < deadline:
@@ -160,6 +167,10 @@ def simulate(conn: sqlite3.Connection, assessment: Assessment, priority: list[st
         if when < deadline:
             arrivals.append((when, i.material_id, qty, i.shipment_id))
             counted[i.material_id] += qty
+    for when, material, qty in planned_releases:
+        if material in parts and qty > 0 and when < deadline:
+            arrivals.append((max(start, when), material, qty, "planned concession release"))
+            counted[material] += qty
     arrivals.sort()
 
     need = defaultdict(float)
@@ -173,12 +184,15 @@ def simulate(conn: sqlite3.Connection, assessment: Assessment, priority: list[st
         if slot < end and timeline[-1]["at"] != slot.isoformat(timespec="minutes"):
             timeline.append({**timeline[-1], "at": slot.isoformat(timespec="minutes")})  # nothing is packed overnight
         while slot < end:
-            length = min(STEP, end - slot)
-            share = length / STEP
-            hours += share
             while arrivals and arrivals[0][0] <= slot:
                 _, material, qty, _ = arrivals.pop(0)
                 available[material] += qty
+            length = min(STEP, end - slot)
+            if planned_releases and arrivals:
+                # A timed recovery can change packing immediately, not just at the next hourly boundary.
+                length = min(length, arrivals[0][0] - slot)
+            share = length / STEP
+            hours += share
             for n, p in enumerate(order):
                 want = min(rate[p] * share, remaining[p])
                 if want <= 0:

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fileUrl, getWhatIf, type Case, type Finding, type Forecast, type Overview } from "./api";
+import { fileUrl, getWhatIf, needsCaseAttention, type Case, type Finding, type Forecast, type Overview } from "./api";
 import { PackChart } from "./Chart";
 import { DockHero } from "./DockHero";
 import { dateClock, fileName, forecastTime, money, num, when } from "./format";
@@ -37,6 +37,7 @@ function Facts({ item, urgency }: { item: Case; urgency: Urgency }) {
 
 function ActionCard({ item, urgency, onOpen }: { item: Case; urgency: Urgency; onOpen: () => void }) {
   const rec = item.recommended;
+  const needsConcession = !!item.concession_target && !item.concession_approval;
   return (
     <Card className="border-l-4 border-l-bad p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -44,7 +45,7 @@ function ActionCard({ item, urgency, onOpen }: { item: Case; urgency: Urgency; o
           <div className="flex items-center gap-2 text-xs text-muted"><Rank urgency={urgency} /> {item.description}</div>
           <h3 className="text-lg font-semibold leading-snug">{item.card?.headline ?? item.description ?? item.material_id}</h3>
         </div>
-        <StateChip state={item.state} />
+        {needsConcession ? <Chip tone="warn">Concession sign-offs</Chip> : <StateChip state={item.state} />}
       </div>
       <p className="mt-2 text-[15px] leading-relaxed text-ink/90">{item.card?.problem ?? item.summary}</p>
       <div className="mt-3 rounded-lg bg-paper p-3">
@@ -62,9 +63,10 @@ function ActionCard({ item, urgency, onOpen }: { item: Case; urgency: Urgency; o
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <p className="rounded-lg border-l-4 border-accent-600 bg-band px-3 py-2 text-[15px] font-medium text-ink">
           <span className="font-bold text-bad-ink">Your step: </span>
-          {item.needs_human ? "Decide how to proceed. The agent could not take this further." : (item.card?.your_step ?? "Review and approve.")}
+          {needsConcession ? "Record the concession once all required sign-offs are complete."
+            : item.needs_human ? "Decide how to proceed. The agent could not take this further." : (item.card?.your_step ?? "Review and approve.")}
         </p>
-        <Button onClick={onOpen}>{item.state === "needs_human" ? "Review case" : "Review draft"}</Button>
+        <Button onClick={onOpen}>{needsConcession ? "Review concession" : item.state === "needs_human" ? "Review case" : "Review draft"}</Button>
       </div>
     </Card>
   );
@@ -152,8 +154,10 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
 
   const f = data.forecast;
   const short = f.products.filter((p) => p.short > 0);
-  const yours = data.cases.filter((c) => c.state === "needs_approval" || c.state === "needs_human");
-  const theirs = data.cases.filter((c) => !yours.includes(c));
+  const approved = data.cases.flatMap((item) => item.concession_approval ? [{ item, approval: item.concession_approval }] : []);
+  approved.sort((a, b) => Date.parse(b.approval.recorded_at) - Date.parse(a.approval.recorded_at));
+  const yours = data.cases.filter(needsCaseAttention);
+  const theirs = data.cases.filter((c) => !c.concession_approval && !yours.includes(c));
   const stopOf = (id: string) => f.products.filter((p) => p.first_stop?.material_id === id).map((p) => p.first_stop!.at).sort()[0] ?? "z";
   yours.sort((a, b) => stopOf(a.material_id).localeCompare(stopOf(b.material_id)));
   const partName = new Map(f.components.map((c) => [c.material_id, c.description ?? c.material_id]));
@@ -189,11 +193,30 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
               ))}
               {yours.length === 0 && (
                 <Card className="p-5 text-sm text-muted">
-                  No draft approvals or escalations. Check open cases for steps that must be done outside Foredock.
+                  No approvals or escalations waiting for you.
                 </Card>
               )}
             </div>
           </section>
+
+          {approved.length > 0 && (
+            <section>
+              <h2 className="font-display text-lg font-semibold">Recorded concession approvals ({approved.length})</h2>
+              <Card className="mt-3 divide-y divide-line overflow-hidden">
+                {approved.map(({ item, approval }) => (
+                  <button key={item.key} onClick={() => onOpen(item.key)}
+                    className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left hover:bg-paper">
+                    <span className="min-w-0">
+                      <span className="block font-medium">{item.description ?? item.material_id}: {num(approval.quantity)} pieces</span>
+                      <span className="block text-sm text-muted">Recorded by {approval.recorded_by} · {dateClock(approval.recorded_at)} Hamburg time</span>
+                    </span>
+                    <span className="shrink-0 text-sm text-accent-ink">View case</span>
+                  </button>
+                ))}
+              </Card>
+              <p className="mt-2 text-xs text-muted">These sign-offs do not confirm warehouse release.</p>
+            </section>
+          )}
 
           {theirs.length > 0 && (
             <section>
@@ -222,7 +245,7 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
       <DetailCard title={`Findings and source files (${data.findings.length})`}>
         <EvidenceList findings={data.findings} />
       </DetailCard>
-      <DetailCard title="Packing timeline and forecast charts">
+      <DetailCard title="Evidence view: packing timeline and charts">
         <p className="mb-4 text-sm text-muted">Based on the paperwork. Past stalls shown here are modeled, not observed.</p>
         <LineTimeline forecast={f} now={data.now} partName={partName} />
         <div className="mt-6 grid gap-4 lg:grid-cols-2">

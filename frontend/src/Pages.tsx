@@ -278,7 +278,7 @@ export function Activity({ data, onOpen }: { data: Overview; onOpen: (key: strin
     <div className="space-y-6">
       <section>
         <h1 className="font-display text-2xl font-semibold tracking-tight">What happened</h1>
-        <p className="mt-1 text-[15px] text-muted">Recent files, supplier mail and handovers. Times include the date in Hamburg time; older events may not appear here.</p>
+        <p className="mt-1 text-[15px] text-muted">Recent files, supplier mail, handovers and recorded concession approvals. Times are shown in Hamburg time.</p>
       </section>
 
       <Card className="p-5">

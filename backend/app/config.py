@@ -1,6 +1,7 @@
 import json
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -21,6 +22,21 @@ class Settings:
     users: tuple[dict, ...]
     mail_configured: bool
     agents_on: bool
+    demo_ready_times: dict[str, datetime] | None = None
+
+
+def _demo_ready_times() -> dict[str, datetime]:
+    """Optional demo assumptions in Hamburg local time, never updates to the evidence."""
+    try:
+        values = json.loads(os.environ.get("DEMO_READY_TIMES") or "{}")
+        if not isinstance(values, dict):
+            return {}
+        if not all(isinstance(value, str) and "T" in value for value in values.values()):
+            return {}
+        times = {part: datetime.fromisoformat(value) for part, value in values.items()}
+        return times if all(at.tzinfo is None for at in times.values()) else {}
+    except ValueError:
+        return {}
 
 
 def _users() -> tuple[dict, ...]:
@@ -51,4 +67,5 @@ def get_settings() -> Settings:
         # Exactly one running copy may have its agents on: two would each pay for the same work and each
         # write to the suppliers. So the loop only runs where it is switched on explicitly.
         agents_on=os.environ.get("AGENTS", "off").lower() in ("on", "true", "1"),
+        demo_ready_times=_demo_ready_times(),
     )

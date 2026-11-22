@@ -5,7 +5,7 @@ import logging
 import os
 from urllib.parse import unquote
 from contextlib import asynccontextmanager, closing
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Res
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app import assistant, durable, llm, views, voice
 from app.agent import LOCAL, run_case
@@ -22,6 +22,7 @@ from app.db import audit, connect
 from app.mail import Mailbox, RecipientNotAllowed
 from app.outbox import send_draft
 from app.pipeline import tick
+from app.truth import Facts, assess
 
 log = logging.getLogger("soony")
 KEEP_AWAKE_SECONDS = 600
@@ -143,6 +144,12 @@ class DraftEdit(BaseModel):
     body: str
 
 
+class ConcessionRecord(BaseModel):
+    batch: str = Field(min_length=1, max_length=200)
+    quantity: int = Field(strict=True, gt=0)
+    case_updated_at: str = Field(min_length=1, max_length=40)
+
+
 @app.get("/healthz")
 def healthz() -> dict:
     return {"ok": True}
@@ -169,9 +176,11 @@ def me(user: dict = Depends(guard)) -> dict:
 
 @app.get("/api/overview")
 def overview(conn=Depends(db), user: dict = Depends(guard)) -> dict:
-    mail_address = os.environ.get("MAIL_ADDRESS") if get_settings().mail_configured else None
-    return {**views.overview(conn, datetime.now(LOCAL)), "loop": {**state, "agents_on": get_settings().agents_on}, "me": user,
-            "mail_address": mail_address, "voice": voice.capabilities(get_settings())}
+    settings = get_settings()
+    mail_address = os.environ.get("MAIL_ADDRESS") if settings.mail_configured else None
+    return {**views.overview(conn, datetime.now(LOCAL), settings.demo_ready_times),
+            "loop": {**state, "agents_on": settings.agents_on}, "me": user,
+            "mail_address": mail_address, "voice": voice.capabilities(settings)}
 
 
 @app.patch("/api/messages/{message_id}", dependencies=[Depends(guard)])
@@ -211,6 +220,45 @@ def approve_and_send(message_id: int, conn=Depends(db), x_approver: str | None =
         raise HTTPException(409, str(e)) from e
     _save(get_settings())
     return sent
+
+
+@app.post("/api/cases/{material_id}/concession-approval", status_code=201)
+def record_concession(material_id: str, request: ConcessionRecord, conn=Depends(db), user: dict = Depends(guard)) -> dict:
+    """Record a completed external sign-off chain, without releasing stock or sending mail."""
+    if not user["verified"] or user["role"] not in ("approver", "admin"):
+        raise HTTPException(403, "Sign in with a personal approver or admin key to record a concession.")
+    settings = get_settings()
+    if settings.public_url and not settings.agents_on:
+        raise HTTPException(409, "Record concessions on the live desk where automatic checks are on.")
+
+    key = f"part:{material_id}"
+    with conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT * FROM cases WHERE key = ?", (key,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Case not found.")
+        if row["updated_at"] != request.case_updated_at:
+            raise HTTPException(409, "The case changed. Refresh and review it before recording the approval.")
+        findings = assess(conn, datetime.now(LOCAL).date()).findings
+        target = views.concession_target(views._case(conn, row, Facts(conn)), findings)
+        if not target or target["batch"] != request.batch:
+            raise HTTPException(409, "This case no longer has that eligible held lot. Refresh and review it.")
+        if request.quantity > target["held_quantity"]:
+            raise HTTPException(422, f"Enter at most {target['held_quantity']:,} pieces for this lot.")
+        if views.recorded_concession(conn, key, request.batch):
+            raise HTTPException(409, "An approval for this lot is already recorded.")
+
+        record = {"batch": request.batch, "quantity": request.quantity, "recorded_by": user["name"],
+                  "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+        conn.execute(
+            """INSERT INTO concession_approvals (case_key, batch, quantity, recorded_by, recorded_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (key, record["batch"], record["quantity"], record["recorded_by"], record["recorded_at"]),
+        )
+        audit(conn, user["name"], "recorded external concession approval", key,
+              f"{request.quantity:,} pieces, lot {request.batch}; warehouse release not recorded by this action")
+    _save(settings)
+    return record
 
 
 @app.post("/api/cases/{material_id}/rework", dependencies=[Depends(guard)])

@@ -231,6 +231,7 @@ export const KIND: Record<Event["kind"], { label: string; dot: string }> = {
   files: { label: "New files", dot: "bg-muted" },
   sent_by_agent: { label: "Agent asked", dot: "bg-coral" },
   sent_by_human: { label: "Sent through desk", dot: "bg-peach" },
+  concession_recorded: { label: "Concession recorded", dot: "bg-good" },
   reply: { label: "Supplier mail", dot: "bg-good" },
   handover: { label: "Handed to you", dot: "bg-accent-600" },
   foreign: { label: "Outside desk", dot: "bg-accent-700" },

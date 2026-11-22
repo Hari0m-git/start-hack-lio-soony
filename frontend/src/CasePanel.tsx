@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { editDraft, fileUrl, reworkCase, sendMessage, type Case, type Finding, type Message } from "./api";
+import { editDraft, fileUrl, recordConcession, reworkCase, sendMessage, type Case, type ConcessionApproval, type Finding, type Message } from "./api";
 import { clock, dateClock, fileName, money, num, when } from "./format";
 import { FlipEvidence } from "./Extras";
 import { Button, Chip, Label, StateChip } from "./ui";
@@ -202,11 +202,81 @@ function Mail({ message }: { message: Message }) {
   );
 }
 
+function Concession({ item, allowed, onChanged }: { item: Case; allowed: boolean; onChanged: () => void }) {
+  const target = item.concession_target;
+  const [confirming, setConfirming] = useState(false);
+  const [quantity, setQuantity] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState<ConcessionApproval | null>(null);
+  const recorded = item.concession_approval ?? saved;
+  if (recorded && (!target || recorded.batch === target.batch)) {
+    return (
+      <section className="rounded-xl border border-line bg-good-soft p-4 text-sm">
+        <div role="status" className="font-semibold text-good-ink">Fully approved externally: {num(recorded.quantity)} pieces</div>
+        <p className="mt-1 text-ink">Lot {recorded.batch} · Recorded by {recorded.recorded_by} · {dateClock(recorded.recorded_at)}</p>
+        <p className="mt-1 text-muted">This is the time the approval was recorded, not the original signing time. It does not confirm any stock was released.</p>
+      </section>
+    );
+  }
+  if (!target) return null;
+
+  async function save(batch: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await recordConcession(item.material_id, { batch, quantity: Number(quantity), case_updated_at: item.updated_at });
+      setSaved(result);
+      onChanged();
+    } catch (failure) {
+      setError(failure instanceof Error && failure.message ? failure.message : "Could not record the approval.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-line bg-band p-4 text-sm">
+      <div className="font-semibold">Concession approval</div>
+      <p className="mt-1 text-muted">If all required sign-offs have happened outside Foredock, record them here. This does not release the lot or send email.</p>
+      {!allowed ? <p className="mt-2 font-medium">Sign in with a personal approver or admin key to record it.</p> : confirming ? (
+        <form className="mt-3 space-y-3" onSubmit={(e) => { e.preventDefault(); void save(target.batch); }}>
+          <label className="block font-medium">
+            Approved pieces from lot {target.batch}
+            <input type="number" required min={1} max={target.held_quantity} step={1} value={quantity}
+              onChange={(e) => setQuantity(e.target.value)} disabled={busy}
+              className="mt-1 block w-36 rounded-lg border border-line bg-card px-3 py-2" />
+          </label>
+          <p className="text-muted">Confirm that every required signer approved this quantity.</p>
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" disabled={busy}
+              className="rounded-xl bg-accent-600 px-4 py-2 font-semibold text-white hover:bg-accent-700 disabled:opacity-50">
+              {busy ? "Recording..." : "Confirm and record"}
+            </button>
+            <button type="button" disabled={busy} onClick={() => setConfirming(false)}
+              className="rounded-xl border border-line bg-card px-4 py-2 font-semibold hover:bg-accent-soft disabled:opacity-50">Cancel</button>
+          </div>
+          {error && <p role="alert" className="text-bad-ink">{error}</p>}
+        </form>
+      ) : (
+        <div className="mt-3">
+          <Button onClick={() => {
+            setQuantity(target.suggested_quantity > 0 ? String(target.suggested_quantity) : "");
+            setError("");
+            setConfirming(true);
+          }}>Record approval</Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function CasePanel({
   item,
   findings,
   canEdit,
   canSend,
+  canRecordConcession,
   hasNamedUser,
   onClose,
   onChanged,
@@ -215,6 +285,7 @@ export function CasePanel({
   findings: Finding[];
   canEdit: boolean;
   canSend: boolean;
+  canRecordConcession: boolean;
   hasNamedUser: boolean;
   onClose: () => void;
   onChanged: () => void;
@@ -264,7 +335,8 @@ export function CasePanel({
             </div>
             <h2 id="case-heading" className="text-lg font-semibold leading-tight">{item.card?.headline ?? item.description ?? item.material_id}</h2>
             <div className="mt-1.5">
-              <StateChip state={item.state} />
+              {(!item.concession_approval || item.state !== "proposed") && <StateChip state={item.state} />}
+              {item.concession_approval && <Chip tone="good">Concession approved externally</Chip>}
             </div>
           </div>
           <button className="rounded-lg px-2 py-1 text-sm text-muted hover:bg-line/50" onClick={onClose} aria-label="Close">
@@ -287,7 +359,7 @@ export function CasePanel({
 
           {rec && (
             <div className="rounded-xl bg-accent-600 p-5 text-white">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/70">The agent suggests</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/70">{item.concession_approval ? "Original recommendation" : "The agent suggests"}</div>
               <div className="mt-1 text-[17px] font-semibold leading-snug">{item.card?.suggestion ?? rec.title}</div>
               <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
                 <div>
@@ -299,13 +371,13 @@ export function CasePanel({
                   <div className="text-base font-semibold">{money(rec.cost, rec.currency)}</div>
                 </div>
                 <div>
-                  <div className="text-white/80">Expected arrival</div>
+                  <div className="text-white/80">{item.concession_target || item.concession_approval ? "Estimated release" : "Expected arrival"}</div>
                   <div className="text-base font-semibold">{rec.arrives_by ? when(rec.arrives_by) : "to be confirmed"}</div>
                 </div>
               </div>
               <p className="mt-3 text-xs text-white/80">
                 This assumes the whole shortage for this part is fixed in time. The proposed action may recover fewer copies.
-                {rec.copies_saved > item.saves_alone && ` The agent’s estimate (${num(rec.copies_saved)}) exceeds the forecast; review before approving.`}
+                {rec.copies_saved > item.saves_alone && ` The agent’s estimate (${num(rec.copies_saved)}) exceeds the forecast for this fix alone.`}
               </p>
               {item.approval && item.approval.required_role !== "No approval required" && (
                 <p className="mt-4 border-t border-white/20 pt-3 text-sm text-white/85">
@@ -315,7 +387,12 @@ export function CasePanel({
             </div>
           )}
 
-          {!item.needs_human && (
+          <Concession
+            key={`${item.updated_at}:${item.concession_target?.batch ?? ""}`}
+            item={item} allowed={canRecordConcession} onChanged={onChanged}
+          />
+
+          {!item.needs_human && !item.concession_target && !item.concession_approval && (
             <div className="rounded-lg border-l-4 border-accent-600 bg-band px-4 py-3 text-[15px] font-medium text-ink">
               <span className="font-bold text-bad-ink">Your step: </span>
               {item.state === "needs_approval"

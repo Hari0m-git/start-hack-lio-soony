@@ -67,6 +67,7 @@ All settings live in `.env` in the repository root. Never commit it.
 | `APP_ACCESS_KEY` | when deployed | Shared passphrase for the desk. A public deployment without it serves no data |
 | `APP_USERS` | no | Personal keys with role and approval limit, see below |
 | `DATABASE_URL` | no | Postgres address; the state is saved there and restored after a restart |
+| `DEMO_READY_TIMES` | no | JSON object mapping part IDs to earlier assumed ready times (ISO datetimes in Hamburg local time). Shows a labeled demo forecast, not confirmed receipts or releases. Leave unset for the normal desk. |
 
 ### The mailbox
 
@@ -87,6 +88,8 @@ APP_USERS=[{"name": "Paul Winter", "key": "a-long-secret", "role": "approver", "
 ```
 
 Roles are `viewer` (reads), `approver` (approves up to the limit) and `admin` (no limit). With personal keys set, the shared key only lets its holder look.
+
+Use a personal approver or admin key to record an external concession from an eligible held-lot case. Only record it after the required sign-offs have happened. This does not send mail or release stock. The recorded approval belongs to the desk's database; a local record doesn't carry over to Render.
 
 Opening the desk as `http://127.0.0.1:8000/?key=<your key>` signs you in and removes the key from the address.
 
@@ -114,6 +117,7 @@ The backend serves the interface, so one service is enough. On Render:
 - Environment: everything from your `.env`, plus `PYTHON_VERSION=3.12.10` and `APP_ACCESS_KEY`.
 - The free plan wipes its disk on restart. Create a free Postgres database and set `DATABASE_URL` to its internal address so the state survives.
 - Set `AGENTS=on` on exactly one copy. Two copies would each pay for the same work and each write to the suppliers.
+- Set `AUTO_SEND=off` to require a person to send supplier mail.
 
 ## Changing the interface
 

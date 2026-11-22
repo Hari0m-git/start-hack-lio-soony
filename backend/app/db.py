@@ -78,6 +78,14 @@ CREATE TABLE IF NOT EXISTS cases (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS concession_approvals (
+    case_key TEXT NOT NULL REFERENCES cases(key),
+    batch TEXT NOT NULL,
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    recorded_by TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    PRIMARY KEY (case_key, batch)
+);
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     case_key TEXT NOT NULL,
