@@ -195,7 +195,7 @@ export function Parts({ data, onOpen }: { data: Overview; onOpen: (key: string) 
             <div
               key={c.material_id}
               onClick={() => setChosen(c.material_id)}
-              className={`grid cursor-pointer items-center gap-x-6 gap-y-2 px-5 py-4 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.5fr)_auto] ${pick?.material_id === c.material_id ? "bg-accent-soft/50" : "hover:bg-accent-soft/30"}`}
+              className={`grid cursor-pointer items-center gap-x-6 gap-y-2 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_11rem] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_17rem] ${pick?.material_id === c.material_id ? "bg-accent-soft/50" : "hover:bg-accent-soft/30"}`}
             >
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-paper text-xs font-semibold ring-1 ring-line">{i + 1}</span>
