@@ -13,11 +13,20 @@ const PartsScene = lazy(() => import("./PartsScene"));
 function Coverage({ c }: { c: ComponentForecast }) {
   const scale = Math.max(c.need, c.usable_stock + c.inbound_counted) || 1;
   const pct = (n: number) => `${(100 * n) / scale}%`;
+  const have = Math.min(c.usable_stock + c.inbound_counted, scale);
   return (
-    <div className="relative h-3 w-full overflow-hidden rounded-full bg-bad-soft">
-      <div className="absolute inset-y-0 left-0 bg-good" style={{ width: pct(Math.min(c.usable_stock, scale)) }} />
-      <div className="absolute inset-y-0 bg-coral" style={{ left: pct(c.usable_stock), width: pct(c.inbound_counted) }} />
-      <div className="absolute inset-y-0 w-0.5 bg-ink" style={{ left: `calc(${pct(c.need)} - 1px)` }} title={`Needed: ${num(c.need)}`} />
+    <div className="relative my-1.5 h-5 w-full">
+      <div className="absolute inset-0 overflow-hidden rounded-md bg-line">
+        <div className="absolute inset-y-0 left-0 bg-good" style={{ width: pct(Math.min(c.usable_stock, scale)) }} />
+        <div className="absolute inset-y-0 bg-coral" style={{ left: pct(c.usable_stock), width: pct(c.inbound_counted) }} />
+        {c.gap > 0 && <div className="hatch absolute inset-y-0" style={{ left: pct(have), width: pct(c.need - have) }} />}
+      </div>
+      {/* The mark for what is needed stands taller than the bar, so it shows on any colour. */}
+      <div
+        className="absolute -inset-y-1.5 w-1 rounded-full bg-accent-600 ring-2 ring-card"
+        style={{ left: `calc(${pct(c.need)} - 2px)` }}
+        title={`Needed: ${num(c.need)}`}
+      />
     </div>
   );
 }
@@ -82,7 +91,7 @@ export function Parts({ data, onOpen }: { data: Overview; onOpen: (key: string) 
               <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-good" />on site</span>
               <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-coral" />on its way</span>
               <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-bad/45 ring-1 ring-bad/50" />missing</span>
-              <span><i className="mr-1.5 inline-block h-0.5 w-3 bg-ink align-middle" />needed</span>
+              <span><i className="mr-1.5 inline-block h-1 w-3 rounded-sm bg-accent-600 align-middle" />needed</span>
               <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm ring-1 ring-ink" />what the system believes</span>
             </div>
           </div>
@@ -93,6 +102,28 @@ export function Parts({ data, onOpen }: { data: Overview; onOpen: (key: string) 
                   <PartsScene parts={shelf} chosen={pick?.material_id ?? null} onChoose={setChosen} active={active} />
                 </Suspense>
               </Quiet>
+            </div>
+          )}
+          {!three && (
+            // Without 3D (reduced motion, or no WebGL) the same columns are drawn flat.
+            <div className="grid h-[230px] items-end gap-2 px-3 pt-4 sm:h-[300px]" style={{ gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))` }}>
+              {shelf.map((part) => {
+                const h = (share: number) => `${(100 * Math.max(0, Math.min(share, 1.5))) / 1.5}%`;
+                const missing = Math.max(0, 1 - part.onSite - part.onItsWay);
+                return (
+                  <button
+                    key={part.id}
+                    onClick={() => setChosen(part.id)}
+                    aria-label={`Show part ${part.id}`}
+                    className={`relative flex h-full flex-col-reverse overflow-hidden rounded-t-md ${pick?.material_id === part.id ? "bg-accent-soft" : "bg-band"}`}
+                  >
+                    <span className="block w-full bg-good" style={{ height: h(part.onSite) }} />
+                    <span className="block w-full bg-coral" style={{ height: h(Math.min(part.onItsWay, 1.5 - Math.min(part.onSite, 1.5))) }} />
+                    <span className="hatch block w-full" style={{ height: h(missing) }} />
+                    <span className="absolute inset-x-0 h-1 bg-accent-600" style={{ bottom: h(1) }} />
+                  </button>
+                );
+              })}
             </div>
           )}
           <div className="grid border-t border-line" style={{ gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))` }}>
@@ -151,6 +182,13 @@ export function Parts({ data, onOpen }: { data: Overview; onOpen: (key: string) 
       </div>
 
       <Card className="divide-y divide-line">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-5 py-3 text-xs font-medium text-ink-2">
+          <span className="font-semibold uppercase tracking-[0.08em] text-muted">How to read the bars</span>
+          <span><i className="mr-1.5 inline-block h-3 w-5 rounded-sm bg-good align-middle" />on site and usable</span>
+          <span><i className="mr-1.5 inline-block h-3 w-5 rounded-sm bg-coral align-middle" />on its way</span>
+          <span><i className="hatch mr-1.5 inline-block h-3 w-5 rounded-sm align-middle" />missing</span>
+          <span><i className="mr-1.5 inline-block h-4 w-1 rounded-full bg-accent-600 align-middle" />what is needed</span>
+        </div>
         {rows.map((c, i) => {
           const wrong = wrongOf(c);
           return (

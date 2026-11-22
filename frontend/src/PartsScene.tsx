@@ -80,8 +80,8 @@ function Column({ x, part, chosen, onChoose, palette }: {
         )}
       </group>
       <mesh position={[0, 0.08 + NEED, 0]}>
-        <boxGeometry args={[1.2, 0.035, 1.2]} />
-        <meshStandardMaterial color={palette.ink} transparent opacity={0.8} roughness={1} />
+        <boxGeometry args={[1.24, 0.06, 1.24]} />
+        <meshStandardMaterial color={palette.accent} roughness={0.8} />
       </mesh>
       {/* An unseen box around the whole column, so it is easy to hit with the pointer. */}
       <mesh position={[0, (CAP * NEED) / 2, 0]}>
