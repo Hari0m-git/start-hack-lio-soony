@@ -181,7 +181,7 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
         </p>
       </section>
 
-      <DockHero data={data} picks={current?.forecast ?? null} />
+      <DockHero data={data} picks={current?.forecast ?? null} onOpen={onOpen} />
 
       <div className="grid items-start gap-6 xl:grid-cols-[1.7fr_1fr]">
         <div className="space-y-6">

@@ -2,23 +2,43 @@ import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode 
 import type { Forecast, Overview } from "./api";
 import type { DockLine } from "./DockScene";
 import { dateClock, forecastTime, num, when } from "./format";
-import { Card, Label, useCountUp } from "./ui";
+import { Button, Card, Label, useCountUp } from "./ui";
 
 // The 3D code is fetched only after the data is on screen.
 const DockScene = lazy(() => import("./DockScene"));
 
-type View = "erp" | "evidence" | "concessions" | "demo" | "picks";
+type View = "erp" | "evidence" | "recovery" | "picks";
 const VIEWS: { id: View; label: string; title: string; note: string }[] = [
   { id: "erp", label: "System view", title: "What the stock system says", note: "Shows the ERP assumptions for comparison, not the evidence-based forecast." },
   { id: "evidence", label: "Evidence view", title: "What the paperwork supports", note: "Uses delivery notes, inspections and supplier replies to check what can actually be used." },
 ];
 const PICKS = { id: "picks" as View, label: "Your picks", title: "With the fixes you ticked", note: "Assumes the parts you ticked below are no longer short. Ticking only simulates." };
-const CONCESSIONS = { id: "concessions" as View, label: "With concessions", title: "If signed concessions are released in time", note: "Assumes the recorded quantities become usable at the estimated times below and action-dependent shipments arrive. Sign-off does not confirm release or pickup." };
-const DEMO = { id: "demo" as View, label: "Demo recovery", title: "If parts are ready earlier",
-  note: "Demo assumptions only. The earlier targets below do not confirm delivery or release. This plan still assumes the port pickup." };
-
 const editionName = (name: string | null, id: string) => name?.replace(/^.*? – /, "").replace(/ \(.*/, "") ?? id;
 const copiesShort = (forecast: Forecast) => forecast.products.reduce((sum, p) => sum + p.short, 0);
+
+function PendingRecovery({ data, onOpen }: { data: Overview; onOpen: (key: string) => void }) {
+  const held = new Set(data.findings.filter((f) => f.kind === "quality_hold" && f.units > 0).map((f) => f.material_id));
+  const cases = data.cases.filter((c) => c.concession_target || c.concession_approval || held.has(c.material_id));
+  const pending = cases.filter((c) => c.concession_target && !c.concession_approval);
+  const actionable = pending.length > 0;
+  const canRecord = data.me.verified && data.me.role !== "viewer";
+  return (
+    <div className="space-y-3 p-5 text-sm sm:p-6">
+      <p className="font-semibold">{actionable ? "Waiting for the sign-offs to be recorded" : "No timed recovery forecast yet"}</p>
+      <p className="max-w-xl text-muted">
+        {actionable
+          ? "If the required sign-offs already happened, record the approval in the case. This does not send email or release stock."
+          : "The forecast needs an eligible lot with a recorded approval and an estimated release before the deadline."}
+      </p>
+      {actionable && !canRecord && <p className="text-muted">Sign in with a personal approver or admin key to record it.</p>}
+      {(actionable ? pending : cases).map((item) => (
+        <div key={item.key}>
+          <Button kind="quiet" onClick={() => onOpen(item.key)}>Open case: {item.description ?? item.material_id}</Button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function canWebGL(): boolean {
   try {
@@ -40,9 +60,13 @@ export class Quiet extends Component<{ children: ReactNode }, { failed: boolean 
   }
 }
 
-export function DockHero({ data, picks }: { data: Overview; picks: Forecast | null }) {
+export function DockHero({ data, picks, onOpen }: { data: Overview; picks: Forecast | null; onOpen: (key: string) => void }) {
   // A link can open the hero on a given view (…/?view=erp), so the story can be shared.
-  const [view, setView] = useState<View | null>(() => new URLSearchParams(location.search).get("view") as View | null);
+  const [view, setView] = useState<View | null>(() => {
+    const asked = new URLSearchParams(location.search).get("view");
+    if (asked === "concessions" || asked === "demo" || asked === "acted") return "recovery";
+    return asked as View | null;
+  });
   const [three] = useState(() => canWebGL() && !matchMedia("(prefers-reduced-motion: reduce)").matches);
   const [active, setActive] = useState(true);
   const stage = useRef<HTMLDivElement>(null);
@@ -67,11 +91,19 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
   useEffect(() => setView((v) => (hasPicks ? "picks" : v === "picks" ? null : v)), [hasPicks]);
   const recorded = data.forecast_with_concessions?.ready ? data.forecast_with_concessions : null;
   const demo = data.demo_recovery?.forecast.ready ? data.demo_recovery : null;
-  const recovery = demo ? DEMO : recorded ? CONCESSIONS : null;
-  const views = [...VIEWS, ...(recovery ? [recovery] : []), ...(picks ? [PICKS] : [])];
+  const recoveryForecast = demo?.forecast ?? recorded;
+  const recovery = { id: "recovery" as View, label: "Recovery plan",
+    title: demo ? "If parts are ready earlier" : recorded ? "If signed concessions are released in time" : "What the recovery plan needs",
+    note: demo
+      ? "Demo assumptions only. The earlier targets do not confirm delivery or release. This plan still assumes the port pickup."
+      : "Assumes the recorded quantities become usable at the estimated times and action-dependent shipments arrive. Sign-off does not confirm release or pickup.",
+  };
+  const views = [...VIEWS, recovery, ...(picks ? [PICKS] : [])];
   const forecasts: Record<View, Forecast> = { erp: data.erp_forecast, evidence: data.forecast,
-    concessions: recorded ?? data.forecast, demo: demo?.forecast ?? data.forecast, picks: picks ?? data.forecast };
-  const selected = view && views.some((v) => v.id === view) ? view : recovery?.id ?? "evidence";
+    recovery: recoveryForecast ?? data.forecast, picks: picks ?? data.forecast };
+  const selected = view && views.some((v) => v.id === view) ? view : recoveryForecast ? "recovery" : "evidence";
+  const showDemo = selected === "recovery" && !!demo;
+  const pendingRecovery = selected === "recovery" && !recoveryForecast;
   const f = forecasts[selected];
   const partName = new Map(data.forecast.components.map((c) => [c.material_id, c.description ?? c.material_id]));
   const short = copiesShort(f);
@@ -89,10 +121,10 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
     speed: 0.5 + (1.5 * p.rate_per_hour) / fastest,
     ghosts: perGhost ? Math.min(12, Math.ceil(p.short / perGhost)) : 0,
   }));
-  const container = (selected === "concessions" || selected === "demo") && data.forecast.components.some((c) => c.inbound_needing_action > 0);
+  const container = selected === "recovery" && data.forecast.components.some((c) => c.inbound_needing_action > 0);
   const meta = views.find((v) => v.id === selected) ?? VIEWS[1];
-  const comparison = selected === "concessions" || selected === "demo" ? data.recovery_comparison : null;
-  const lateParts = selected === "demo" ? demo?.late_parts : comparison?.late_parts;
+  const comparison = selected === "recovery" ? data.recovery_comparison : null;
+  const lateParts = showDemo ? demo?.late_parts : comparison?.late_parts;
   const evidenceShort = copiesShort(data.forecast);
 
   return (
@@ -116,7 +148,7 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
         </div>
       </div>
 
-      <div className={`grid ${three ? "lg:grid-cols-[1.45fr_1fr]" : ""}`}>
+      {pendingRecovery ? <PendingRecovery data={data} onOpen={onOpen} /> : <div className={`grid ${three ? "lg:grid-cols-[1.45fr_1fr]" : ""}`}>
         {three && (
           <div ref={stage} className="relative h-[210px] min-w-0 overflow-hidden sm:h-[300px] lg:h-[360px] 2xl:h-[420px]">
             <Quiet>
@@ -198,7 +230,7 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
                   {comparison.without_supplier_commitments !== evidenceShort && (
                     <p>Without supplier commitments: {num(comparison.without_supplier_commitments)} projected to miss launch.</p>
                   )}
-                  {selected === "demo" && recorded && <>
+                  {showDemo && recorded && <>
                     {recorded.products.filter((p) => p.finished_at).map((p) => (
                       <p key={p.product_id}>At the recorded estimates, {editionName(p.name, p.product_id)} finishes {when(p.finished_at)}.</p>
                     ))}
@@ -206,7 +238,7 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
                       <p>At the recorded estimates, {num(copiesShort(recorded))} copies are projected to miss launch.</p>
                     )}
                   </>}
-                  {selected === "demo" && demo?.targets.map((target) => (
+                  {showDemo && demo?.targets.map((target) => (
                     <p key={target.material_id}>
                       <span className="font-semibold text-ink">{target.description}:</span>{" "}
                       assumed ready for packing {forecastTime(target.ready_at)} (Hamburg time).
@@ -215,7 +247,7 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
                 </div>
               </details>
             )}
-            {selected === "concessions" && data.recorded_releases?.map((release) => (
+            {selected === "recovery" && !showDemo && data.recorded_releases?.map((release) => (
               <p key={release.case_key} className="rounded-lg border border-line bg-band px-3 py-2">
                 <span className="font-semibold text-ink">{release.description}: {num(release.quantity)} pieces.</span>{" "}
                 Approval recorded {dateClock(release.recorded_at)}; estimated release {forecastTime(release.expected_at)} (Hamburg time).
@@ -228,7 +260,7 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
             </div>
           </div>
         </div>
-      </div>
+      </div>}
     </Card>
   );
 }
