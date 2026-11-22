@@ -129,10 +129,10 @@ export function Parts({ data, onOpen }: { data: Overview; onOpen: (key: string) 
               <Figure label="Still needed" value={num(pick.need)} />
               <Figure label="On site and usable" value={num(pick.usable_stock)} />
               <Figure label="On its way, counted" value={num(pick.inbound_counted)} />
-              <Figure label="Missing" value={num(pick.gap)} tone={pick.gap > 0 ? "text-bad-ink" : "text-good-ink"} />
+              <Figure label="Missing" value={num(pick.gap)} tone={pick.gap > 0 ? "text-bad-ink" : "text-ink"} />
             </div>
             {wrongOf(pick) && (
-              <p className="mt-4 rounded-lg bg-warn-soft px-3 py-2 text-sm text-warn-ink">
+              <p className="mt-4 rounded-lg border-l-4 border-accent-600 bg-accent-soft px-3 py-2 text-sm font-semibold text-ink">
                 The system shows {num(pick.erp_stock)} in stock. The paperwork supports {num(pick.usable_stock)}.
               </p>
             )}
@@ -172,8 +172,8 @@ export function Parts({ data, onOpen }: { data: Overview; onOpen: (key: string) 
                   <span>needed {num(c.need)}</span>
                   <span>on site {num(c.usable_stock)}</span>
                   {c.inbound_counted > 0 && <span>on its way {num(c.inbound_counted)}</span>}
-                  {wrong && <span className="text-bad-ink">the system shows {num(c.erp_stock)}</span>}
-                  {c.inbound_needing_action > 0 && <span className="text-warn-ink">{num(c.inbound_needing_action)} more if someone acts</span>}
+                  {wrong && <span className="font-semibold text-bad-ink">the system shows {num(c.erp_stock)}</span>}
+                  {c.inbound_needing_action > 0 && <span className="font-semibold text-ink">{num(c.inbound_needing_action)} more if someone acts</span>}
                 </div>
               </div>
               <div className="flex items-center gap-2 sm:justify-end">

@@ -84,10 +84,10 @@ function Facts({ item, urgency }: { item: Case; urgency: Urgency }) {
   const signer = item.approval?.person ?? item.approval?.required_role;
   return (
     <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs">
-      {urgency.stop && <div><dt className="inline text-muted">Line stops </dt><dd className="inline font-medium">{when(urgency.stop)}</dd></div>}
-      {signer && <div className="min-w-0 max-w-full truncate"><dt className="inline text-muted">Who signs </dt><dd className="inline font-medium">{signer}</dd></div>}
-      {rec && <div><dt className="inline text-muted">Cost </dt><dd className="inline font-medium">{money(rec.cost, rec.currency)}</dd></div>}
-      {rec && rec.copies_saved > 0 && <div><dt className="inline text-muted">Saves </dt><dd className="inline font-medium">{num(rec.copies_saved)} copies</dd></div>}
+      {urgency.stop && <div className="rounded bg-accent-soft px-1.5 font-semibold text-bad-ink"><dt className="inline">Line stops </dt><dd className="inline">{when(urgency.stop)}</dd></div>}
+      {signer && <div className="min-w-0 max-w-full truncate"><dt className="inline text-muted">Who signs </dt><dd className="inline font-semibold text-ink">{signer}</dd></div>}
+      {rec && <div><dt className="inline text-muted">Cost </dt><dd className="inline font-semibold text-ink">{money(rec.cost, rec.currency)}</dd></div>}
+      {rec && rec.copies_saved > 0 && <div><dt className="inline text-muted">Saves </dt><dd className="inline font-semibold text-ink">{num(rec.copies_saved)} copies</dd></div>}
     </dl>
   );
 }
@@ -116,8 +116,8 @@ function ActionCard({ item, urgency, onOpen }: { item: Case; urgency: Urgency; o
         )}
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm">
-          <span className="font-semibold">Your step: </span>
+        <p className="rounded-lg border-l-4 border-accent-600 bg-band px-3 py-2 text-[15px] font-medium text-ink">
+          <span className="font-bold text-bad-ink">Your step: </span>
           {item.needs_human ? "Decide how to proceed. The agent could not take this further." : (item.card?.your_step ?? "Review and approve.")}
         </p>
         <Button onClick={onOpen}>{item.state === "needs_human" ? "Open and decide" : "Review and approve"}</Button>
@@ -140,7 +140,7 @@ function QuietRow({ item, urgency, onOpen }: { item: Case; urgency: Urgency; onO
         <div className="flex flex-wrap items-center gap-x-2 font-medium">
           <Rank urgency={urgency} /> {item.card?.headline ?? item.description} <span className="text-xs font-normal text-muted">· {item.description}</span>
         </div>
-        <div className="mt-0.5 truncate text-sm text-muted">{status}</div>
+        <div className="mt-0.5 truncate text-sm font-medium text-ink-2">{status}</div>
         <Facts item={item} urgency={urgency} />
       </div>
       <span className="shrink-0 text-sm text-accent-ink">Open ›</span>
@@ -259,11 +259,11 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
       </div>
 
       {data.foreign_mail.length > 0 && (
-        <Card className="border-l-4 border-l-bad p-4 text-sm">
-          <div className="font-semibold text-bad-ink">
+        <Card className="border-2 border-accent-600 bg-accent-soft p-4 text-sm">
+          <div className="text-base font-bold text-bad-ink">
             {data.foreign_mail.length} message{data.foreign_mail.length > 1 ? "s" : ""} left this mailbox that the agents did not send
           </div>
-          <p className="mt-1 text-muted">
+          <p className="mt-1 font-medium text-ink">
             Last one to {data.foreign_mail[data.foreign_mail.length - 1].counterpart_name} at {clock(data.foreign_mail[data.foreign_mail.length - 1].sent_at)}. Check who
             or what else uses the mailbox: suppliers treat every mail from it as coming from Soony.
           </p>
@@ -347,7 +347,7 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
                 <PackChart productId={p.product_id} evidence={f} erp={data.erp_forecast} />
               </div>
               {p.first_stop && p.short > 0 && (
-                <p className="mt-3 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad-ink">
+                <p className="mt-3 rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white">
                   The line stops {when(p.first_stop.at)} when {partName.get(p.first_stop.material_id) ?? p.first_stop.material_id} runs out.
                 </p>
               )}

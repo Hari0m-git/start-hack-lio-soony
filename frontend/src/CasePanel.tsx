@@ -286,8 +286,8 @@ export function CasePanel({
           )}
 
           {!item.needs_human && (
-            <div className="rounded-lg border border-line bg-card px-4 py-3 text-[15px]">
-              <span className="font-semibold">Your step: </span>
+            <div className="rounded-lg border-l-4 border-accent-600 bg-band px-4 py-3 text-[15px] font-medium text-ink">
+              <span className="font-bold text-bad-ink">Your step: </span>
               {item.state === "needs_approval"
                 ? (item.card?.your_step ?? "Review the message below and approve it.")
                 : item.state === "waiting_for_supplier"

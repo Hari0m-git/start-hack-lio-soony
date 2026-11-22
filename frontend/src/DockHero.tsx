@@ -146,13 +146,21 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
                   <div className="bg-coral transition-[width] duration-500 ease-out" style={{ width: share(p.packed_by_deadline) }} />
                   <div className="hatch transition-[width] duration-500 ease-out" style={{ width: share(p.short) }} />
                 </div>
-                <div className={`mt-1.5 text-sm ${p.short > 0 ? "text-bad-ink" : "text-good-ink"}`}>
-                  {p.short > 0 && p.first_stop
-                    ? `First stops ${when(p.first_stop.at)} for ${partName.get(p.first_stop.material_id) ?? p.first_stop.material_id} · ${num(p.short)} short by the deadline`
-                    : p.finished_at
-                      ? `Finishes ${when(p.finished_at)}`
-                      : "Packed in time"}
-                </div>
+                {p.short > 0 && p.first_stop ? (
+                  <div className="mt-2 flex items-start gap-2.5 rounded-lg bg-accent-600 px-3 py-2 text-sm text-white">
+                    <svg viewBox="0 0 24 24" className="mt-0.5 h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+                      <path d="M12 8v5M12 16.5v.5M10.3 4.2L2.8 17.5A2 2 0 004.5 20.5h15a2 2 0 001.7-3L13.7 4.2a2 2 0 00-3.4 0z" />
+                    </svg>
+                    <span>
+                      <span className="font-semibold">First stops {when(p.first_stop.at)}</span> for {partName.get(p.first_stop.material_id) ?? p.first_stop.material_id}
+                      <span className="block font-display text-base font-semibold">{num(p.short)} short by the deadline</span>
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-2 rounded-lg bg-band px-3 py-2 text-sm font-semibold text-ink ring-1 ring-line">
+                    {p.finished_at ? `Finishes ${when(p.finished_at)}, in time` : "Packed in time"}
+                  </div>
+                )}
               </div>
             );
           })}

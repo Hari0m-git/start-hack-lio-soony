@@ -58,8 +58,8 @@ export function Label({ children }: { children: ReactNode }) {
 
 type Tone = "bad" | "warn" | "good" | "neutral";
 const TONES: Record<Tone, string> = {
-  bad: "bg-bad-soft text-bad-ink ring-1 ring-bad/20",
-  warn: "bg-warn-soft text-warn-ink",
+  bad: "bg-accent-600 text-white font-semibold",
+  warn: "bg-warn-soft text-warn-ink font-semibold ring-1 ring-warn/50",
   good: "bg-good-soft text-good-ink",
   neutral: "bg-band text-ink-2 ring-1 ring-line",
 };
