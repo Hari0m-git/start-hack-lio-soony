@@ -10,15 +10,31 @@ const SPACING = 1.25;
 const BOXES = 8;
 const MAX_GHOSTS = 12;
 
-type Palette = Record<"ground" | "wall" | "roof" | "belt" | "accent" | "bad" | "sky" | "peach" | "ink", string>;
+type Palette = Record<"ground" | "wall" | "roof" | "belt" | "accent" | "bad" | "good" | "sky" | "peach" | "ink", string>;
 
-function readPalette(): Palette {
+export function readPalette(): Palette {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string) => css.getPropertyValue(name).trim();
   return {
     ground: v("--color-accent-soft"), wall: v("--color-solid"), roof: v("--color-sky"), belt: v("--color-line"),
-    accent: v("--color-accent"), bad: v("--color-bad"), sky: v("--color-sky"), peach: v("--color-peach"), ink: v("--color-ink-2"),
+    accent: v("--color-accent"), bad: v("--color-bad"), good: v("--color-good"), sky: v("--color-sky"), peach: v("--color-peach"), ink: v("--color-ink-2"),
   };
+}
+
+/** Counts up whenever the theme changes, so a scene can read its colours again. */
+export function useThemeTick(): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setTick((t) => t + 1);
+    const system = matchMedia("(prefers-color-scheme: dark)");
+    window.addEventListener("foredock-theme", bump);
+    system.addEventListener("change", bump);
+    return () => {
+      window.removeEventListener("foredock-theme", bump);
+      system.removeEventListener("change", bump);
+    };
+  }, []);
+  return tick;
 }
 
 function Rig() {
@@ -146,24 +162,13 @@ function Container({ arriving, palette }: { arriving: boolean; palette: Palette 
 }
 
 export default function DockScene({ lines, container, active }: { lines: DockLine[]; container: boolean; active: boolean }) {
-  const [theme, setTheme] = useState(0);
+  const theme = useThemeTick();
   const [settling, setSettling] = useState(true);
   const palette = useMemo(readPalette, [theme]);
   const ghostMaterial = useMemo(
     () => new MeshStandardMaterial({ color: palette.bad, transparent: true, opacity: 0.42, roughness: 0.5, depthWrite: false }),
     [palette],
   );
-
-  useEffect(() => {
-    const bump = () => setTheme((t) => t + 1);
-    const system = matchMedia("(prefers-color-scheme: dark)");
-    window.addEventListener("foredock-theme", bump);
-    system.addEventListener("change", bump);
-    return () => {
-      window.removeEventListener("foredock-theme", bump);
-      system.removeEventListener("change", bump);
-    };
-  }, []);
 
   // After a change the scene needs a moment of frames to ease into its new state, even if nothing else moves.
   const signature = lines.map((l) => `${l.stopped}${l.ghosts}`).join() + container + theme;

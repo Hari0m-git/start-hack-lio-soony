@@ -4,16 +4,27 @@ import { PackChart } from "./Chart";
 import { DockHero } from "./DockHero";
 import { clock, money, num, when } from "./format";
 import { Button, Card, Chip, Label, StateChip } from "./ui";
+import { LineTimeline, Ring, WorthBars } from "./Viz";
 
 const HELP_KEY = "foredock.help.dismissed";
 const editionName = (name: string | null, id: string) => name?.replace(/^.*? – /, "").replace(/ \(.*/, "") ?? id;
 
-function Kpi({ label, value, hint, tone = "text-ink" }: { label: string; value: string; hint: string; tone?: string }) {
+function Kpi({ label, value, hint, tone = "text-ink", share, ring, what }: {
+  label: string; value: string; hint: string; tone?: string; share: number; ring: "accent" | "good" | "warn" | "bad"; what: string;
+}) {
   return (
-    <Card tilt className="p-5">
-      <Label>{label}</Label>
-      <div className={`mt-1 font-display text-[44px] font-semibold leading-none tracking-tight ${tone}`}>{value}</div>
-      <div className="mt-0.5 text-xs text-muted">{hint}</div>
+    <Card tilt className="flex items-center justify-between gap-4 p-5">
+      <div className="min-w-0">
+        <Label>{label}</Label>
+        <div className={`mt-1 font-display text-[44px] font-semibold leading-none tracking-tight ${tone}`}>{value}</div>
+        <div className="mt-1 text-xs text-muted">{hint}</div>
+      </div>
+      <div className="w-20 shrink-0 text-center">
+        <div className="flex justify-center">
+          <Ring share={share} tone={ring} size={64}>{Math.round(share * 100)}%</Ring>
+        </div>
+        <div className="mt-1 text-[11px] leading-tight text-muted">{what}</div>
+      </div>
     </Card>
   );
 }
@@ -118,6 +129,8 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
   const stopOf = (id: string) => f.products.filter((p) => p.first_stop?.material_id === id).map((p) => p.first_stop!.at).sort()[0] ?? "z";
   yours.sort((a, b) => stopOf(a.material_id).localeCompare(stopOf(b.material_id)));
   const partName = new Map(f.components.map((c) => [c.material_id, c.description ?? c.material_id]));
+  const toPack = f.products.reduce((sum, p) => sum + p.to_pack, 0);
+  const sent = data.agent_work.sent_by_agents + data.agent_work.approved_by_people;
 
   return (
     <div className="space-y-6">
@@ -137,17 +150,19 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
       <DockHero data={data} />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Kpi label="Copies at risk" value={num(atRisk)} hint="will not be packed if nobody acts" tone={atRisk ? "text-bad-ink" : "text-good-ink"} />
         <Kpi
-          label="Waiting for you"
-          value={String(yours.length)}
-          hint={yours.length ? "decisions only a person may take" : "nothing needs you right now"}
-          tone={yours.length ? "text-bad-ink" : "text-good-ink"}
+          label="Copies at risk" value={num(atRisk)} hint="will not be packed if nobody acts" tone={atRisk ? "text-bad-ink" : "text-good-ink"}
+          share={toPack ? atRisk / toPack : 0} ring={atRisk ? "bad" : "good"} what="of what is left to pack"
         />
         <Kpi
-          label="Done by the agents"
-          value={String(data.agent_work.sent_by_agents + data.agent_work.replies)}
+          label="Waiting for you" value={String(yours.length)} hint={yours.length ? "decisions only a person may take" : "nothing needs you right now"}
+          tone={yours.length ? "text-bad-ink" : "text-good-ink"}
+          share={data.cases.length ? yours.length / data.cases.length : 0} ring={yours.length ? "warn" : "good"} what="of the open cases"
+        />
+        <Kpi
+          label="Done by the agents" value={String(data.agent_work.sent_by_agents + data.agent_work.replies)}
           hint={`${data.agent_work.sent_by_agents} questions sent, ${data.agent_work.replies} answers read`}
+          share={sent ? data.agent_work.sent_by_agents / sent : 0} ring="accent" what="of messages sent without you"
         />
       </div>
 
@@ -165,60 +180,51 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
 
       <HowTo />
 
-      <section>
-        <h2 className="font-display text-lg font-semibold">What needs you now</h2>
-        <div className="mt-3 space-y-4">
-          {yours.map((c) => (
-            <ActionCard key={c.key} item={c} onOpen={() => onOpen(c.key)} />
-          ))}
-          {yours.length === 0 && (
-            <Card className="p-5 text-sm text-muted">
-              {data.cases.length === 0 && data.loop.agents_on ? "The agents are working through the files. Their first suggestions appear here in a few minutes." : "Nothing. The agents will bring a decision here when one is needed."}
-            </Card>
+      <div className="grid items-start gap-6 xl:grid-cols-[1.7fr_1fr]">
+        <div className="space-y-6">
+          <section>
+            <h2 className="font-display text-lg font-semibold">What needs you now</h2>
+            <div className="mt-3 space-y-4">
+              {yours.map((c) => (
+                <ActionCard key={c.key} item={c} onOpen={() => onOpen(c.key)} />
+              ))}
+              {yours.length === 0 && (
+                <Card className="p-5 text-sm text-muted">
+                  {data.cases.length === 0 && data.loop.agents_on ? "The agents are working through the files. Their first suggestions appear here in a few minutes." : "Nothing. The agents will bring a decision here when one is needed."}
+                </Card>
+              )}
+            </div>
+          </section>
+
+          {theirs.length > 0 && (
+            <section>
+              <h2 className="font-display text-lg font-semibold">The agents are handling</h2>
+              <Card className="mt-3 divide-y divide-line overflow-hidden">
+                {theirs.map((c) => (
+                  <QuietRow key={c.key} item={c} onOpen={() => onOpen(c.key)} />
+                ))}
+              </Card>
+            </section>
           )}
         </div>
+
+        {data.cases.length > 0 && (
+          <section>
+            <h2 className="font-display text-lg font-semibold">What each fix is worth</h2>
+            <Card className="mt-3 p-5">
+              <p className="mb-4 text-sm text-muted">Copies saved by solving one part alone. A copy needs every part, so the fixes do not simply add up.</p>
+              <WorthBars cases={data.cases} plan={data.plan} onOpen={onOpen} />
+            </Card>
+          </section>
+        )}
+      </div>
+
+      <section>
+        <h2 className="font-display text-lg font-semibold">When the lines stand still</h2>
+        <Card className="mt-3 p-5">
+          <LineTimeline forecast={f} now={data.now} partName={partName} />
+        </Card>
       </section>
-
-      {theirs.length > 0 && (
-        <section>
-          <h2 className="font-display text-lg font-semibold">The agents are handling</h2>
-          <Card className="mt-3 divide-y divide-line overflow-hidden">
-            {theirs.map((c) => (
-              <QuietRow key={c.key} item={c} onOpen={() => onOpen(c.key)} />
-            ))}
-          </Card>
-        </section>
-      )}
-
-      {data.cases.length > 0 && (
-        <section>
-          <h2 className="font-display text-lg font-semibold">What each fix is worth</h2>
-          <p className="mt-1 text-sm text-muted">A copy needs every part, so the fixes do not simply add up.</p>
-          <Card className="mt-3 divide-y divide-line">
-            {[...data.cases]
-              .sort((a, b) => b.saves_alone - a.saves_alone)
-              .map((c) => (
-                <div key={c.key} className="flex flex-wrap items-baseline justify-between gap-x-4 px-5 py-3 text-sm">
-                  <span className="font-medium">{c.description}</span>
-                  <span className="text-muted">
-                    on its own saves <span className="font-semibold text-ink">{num(c.saves_alone)}</span> copies
-                    {c.then_limited_by.length > 0 && `, then ${c.then_limited_by.join(" and ")} hold${c.then_limited_by.length > 1 ? "" : "s"} the line`}
-                  </span>
-                </div>
-              ))}
-            <div className="flex flex-wrap items-baseline justify-between gap-x-4 px-5 py-3 text-sm">
-              <span className="font-semibold">All of them together</span>
-              <span className={`font-semibold ${data.plan.short_if_all_solved ? "text-warn-ink" : "text-good-ink"}`}>
-                {data.plan.short_if_all_solved == null
-                  ? "not known"
-                  : data.plan.short_if_all_solved > 0
-                    ? `${num(data.plan.short_if_all_solved)} copies still miss the launch`
-                    : "every copy is packed in time"}
-              </span>
-            </div>
-          </Card>
-        </section>
-      )}
 
       <section>
         <h2 className="font-display text-lg font-semibold">Will we make it?</h2>

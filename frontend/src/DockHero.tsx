@@ -16,7 +16,7 @@ const VIEWS: { id: View; label: string; title: string; note: string }[] = [
 
 const editionName = (name: string | null, id: string) => name?.replace(/^.*? – /, "").replace(/ \(.*/, "") ?? id;
 
-function canWebGL(): boolean {
+export function canWebGL(): boolean {
   try {
     const canvas = document.createElement("canvas");
     return !!(canvas.getContext("webgl2") ?? canvas.getContext("webgl"));
@@ -26,7 +26,7 @@ function canWebGL(): boolean {
 }
 
 /** If the 3D scene cannot load or run, the hero simply goes on without it. */
-class Quiet extends Component<{ children: ReactNode }, { failed: boolean }> {
+export class Quiet extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
@@ -104,7 +104,7 @@ export function DockHero({ data }: { data: Overview }) {
 
       <div className={`grid ${three ? "lg:grid-cols-[1.45fr_1fr]" : ""}`}>
         {three && (
-          <div ref={stage} className="relative h-[210px] min-w-0 overflow-hidden sm:h-[300px] lg:h-[360px]">
+          <div ref={stage} className="relative h-[210px] min-w-0 overflow-hidden sm:h-[300px] lg:h-[360px] 2xl:h-[420px]">
             <Quiet>
               <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted">Setting up the dock…</div>}>
                 <DockScene lines={lines} container={container} active={active} />

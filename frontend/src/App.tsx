@@ -176,7 +176,7 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <header className="glass sticky top-0 z-10 border-b border-line">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-5 gap-y-2 px-4 py-2.5 sm:px-6">
+        <div className="mx-auto flex max-w-[1480px] flex-wrap items-center justify-between gap-x-5 gap-y-2 px-4 py-2.5 sm:px-6 xl:px-10">
           <Wordmark />
           <nav aria-label="Pages" className="order-3 flex w-full gap-1 rounded-full border border-line bg-card p-1 lg:order-none lg:w-auto">
             {PAGES.map((p) => (
@@ -225,7 +225,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 pb-24 pt-6 sm:px-6">
+      <main className="mx-auto max-w-[1480px] px-4 pb-24 pt-6 sm:px-6 xl:px-10">
         {page === "today" && <Today data={data} onOpen={setOpen} />}
         {page === "parts" && <Parts data={data} onOpen={setOpen} />}
         {page === "activity" && <Activity data={data} onOpen={setOpen} />}

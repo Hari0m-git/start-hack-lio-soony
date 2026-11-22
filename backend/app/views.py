@@ -133,7 +133,7 @@ def activity(conn: sqlite3.Connection, facts: Facts, limit: int = 40) -> list[di
         else:
             who = ("The agent asked" if m["sent_by"] == "agent" else "Something other than the agents wrote to"
                    if m["sent_by"] == "other" else "You approved a message to")
-            items.append({"at": m["sent_at"], "kind": "sent_by_agent" if m["sent_by"] == "agent" else "sent_by_human",
+            items.append({"at": m["sent_at"], "kind": {"agent": "sent_by_agent", "other": "foreign"}.get(m["sent_by"], "sent_by_human"),
                           "case_key": m["case_key"], "text": f"{who} {m['counterpart_name']} about {name(m['case_key'])}",
                           "detail": m["subject"]})
     for c in conn.execute("SELECT key, needs_human, updated_at FROM cases WHERE needs_human IS NOT NULL"):
