@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { CaseState } from "./api";
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <section className={`rounded-xl border border-line bg-card ${className}`}>{children}</section>;
+  return <section className={`rounded-2xl border border-line bg-card shadow-card ${className}`}>{children}</section>;
 }
 
 export function Label({ children }: { children: ReactNode }) {
@@ -50,7 +50,7 @@ export function Button({
 }) {
   const style =
     kind === "primary"
-      ? "bg-accent text-white hover:bg-[#182d4a] disabled:bg-[#9aa7b8]"
+      ? "bg-accent text-white hover:bg-black disabled:bg-[#9a9da5]"
       : "border border-line bg-card text-ink hover:bg-paper disabled:text-muted";
   return (
     <button onClick={onClick} disabled={disabled} className={`rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${style}`}>

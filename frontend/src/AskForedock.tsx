@@ -13,7 +13,7 @@ export function AskForedock({ caseKey, onOpen, verified, availability }: {
   verified: boolean;
   availability: VoiceAvailability;
 }) {
-  const [open, setOpen] = useState(availability.transcribe);
+  const [open, setOpen] = useState(true);
   const [transcribeOnly, setTranscribeOnly] = useState(false);
   const [draft, setDraft] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -70,7 +70,7 @@ export function AskForedock({ caseKey, onOpen, verified, availability }: {
   }
 
   return (
-    <section className="mb-5 rounded-xl border border-line bg-white p-4">
+    <section className="rounded-2xl border border-line bg-white p-4">
       <div className="flex items-center justify-between gap-3">
         <button type="button" aria-expanded={open} className="font-semibold" onClick={() => { if (open) { voice.cancel(); cancelTurn(); } setOpen(!open); }}>Ask Foredock</button>
         <span className="text-xs text-muted">{verified ? "Personal key · Read only" : "Shared key · Read only"}</span>
@@ -107,11 +107,11 @@ export function AskForedock({ caseKey, onOpen, verified, availability }: {
           {detected && !language && <p role="status" className="text-sm text-muted">Detected {LANGUAGES[detected]}</p>}
           <div className="flex flex-wrap items-center gap-3">
             {availability.transcribe && voice.stage === "idle" && <>
-              <button type="button" disabled={busy} onClick={() => startRecording(false)}>🎙 Ask by voice</button>
-              <button type="button" disabled={busy} onClick={() => startRecording(true)}>Transcribe</button>
+              <button type="button" disabled={busy} className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" onClick={() => startRecording(false)}>🎙 Ask by voice</button>
+              <button type="button" disabled={busy} className="rounded-full border border-line px-4 py-2 text-sm disabled:opacity-50" onClick={() => startRecording(true)}>Transcribe</button>
             </>}
             {voice.stage === "opening" && <span role="status">Waiting for microphone…</span>}
-            {voice.stage === "recording" && !transcribeOnly && <span role="status">Listening… pause to send</span>}
+            {voice.stage === "recording" && !transcribeOnly && <span role="status" className="flex items-center gap-2 text-sm font-medium text-bad"><span className="h-2.5 w-2.5 animate-pulse rounded-full bg-bad" />Listening… pause to send</span>}
             {voice.stage === "recording" && <button type="button" onClick={voice.stopRecording}>
               {transcribeOnly ? "Stop and transcribe" : "Stop and ask"}
             </button>}

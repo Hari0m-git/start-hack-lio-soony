@@ -68,6 +68,7 @@ export default function App() {
     address(page, key);
   };
   const [tick, setTick] = useState(0);
+  const [ask, setAsk] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -115,11 +116,11 @@ export default function App() {
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 border-b border-line bg-paper/95 backdrop-blur">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-3">
-          <div className="flex items-baseline gap-3">
-            <div className="text-xl font-semibold tracking-tight">Foredock</div>
-            <div className="hidden text-sm text-muted sm:block">
-              Soony · Grand Heist 6 launch · {data.me.name ?? "shared access"}
-              {data.me.role === "viewer" && " (view only)"}
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand text-lg font-bold text-white" aria-hidden>F</div>
+            <div className="leading-tight">
+              <div className="text-sm font-bold uppercase tracking-[0.14em]">Foredock</div>
+              <div className="text-xs text-muted">Launch desk · Soony · Grand Heist 6</div>
             </div>
           </div>
           <nav className="order-3 flex w-full gap-1 sm:order-none sm:w-auto">
@@ -136,21 +137,55 @@ export default function App() {
               </button>
             ))}
           </nav>
-          <div className="text-right leading-tight">
-            <div className="text-xs text-muted">Trucks leave {when(f.deadline)} in</div>
-            <div className="text-lg font-semibold tabular-nums">{countdown(hoursLeft)}</div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-full border border-line bg-card px-3 py-1.5">
+              <span className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${data.loop.agents_on ? "bg-good" : "bg-muted"}`} />
+              Status {when(f.as_of)}
+            </span>
+            <span className="rounded-full border border-line bg-card px-3 py-1.5">Trucks leave {when(f.deadline)} · {countdown(hoursLeft)}</span>
+            <span className="hidden rounded-full border border-line bg-card px-3 py-1.5 md:inline">
+              AI spend ${data.spend.today_usd.toFixed(2)} / ${data.spend.budget_usd.toFixed(2)}
+            </span>
+            <span className="rounded-full border border-line bg-card px-3 py-1.5 font-medium">
+              {data.me.name ?? "Shared access"}
+              {data.me.role === "viewer" && " · view only"}
+            </span>
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-5xl px-5 pb-20 pt-7">
-        {accessKey() && <AskForedock key={accessKey()} caseKey={open} onOpen={setOpen} verified={data.me.verified} availability={data.voice} />}
+
         {page === "today" && <Today data={data} onOpen={setOpen} />}
         {page === "parts" && <Parts data={data} onOpen={setOpen} />}
         {page === "activity" && <Activity data={data} onOpen={setOpen} />}
         {page === "agents" && <Agents data={data} />}
       </main>
 
+      {ask && (
+        <div className="fixed inset-x-3 bottom-20 z-30 max-h-[75vh] overflow-y-auto rounded-2xl shadow-2xl sm:inset-x-auto sm:right-5 sm:w-[420px]">
+          {accessKey() ? (
+            <AskForedock key={accessKey()} caseKey={open} onOpen={setOpen} verified={data.me.verified} availability={data.voice} />
+          ) : (
+            <section className="rounded-2xl border border-line bg-white p-4 text-sm">
+              <div className="font-semibold">Ask Foredock</div>
+              <p className="mt-2 text-muted">
+                The assistant only answers signed-in users. Set <code>APP_ACCESS_KEY</code> (or personal keys in <code>APP_USERS</code>) on
+                the server and open the desk with that key. Voice also needs <code>VOICE_PILOT=on</code>.
+              </p>
+            </section>
+          )}
+        </div>
+      )}
+      <button
+        onClick={() => setAsk(!ask)}
+        aria-expanded={ask}
+        aria-label={ask ? "Close Ask Foredock" : "Open Ask Foredock, the question and voice assistant"}
+        className="fixed bottom-5 right-5 z-30 flex items-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-semibold text-white shadow-xl hover:bg-black"
+      >
+        <span className={`h-2.5 w-2.5 rounded-full bg-brand ${ask ? "animate-pulse" : ""}`} />
+        {ask ? "Close" : data.voice?.transcribe ? "Ask Foredock · voice" : "Ask Foredock"}
+      </button>
       {error && <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-ink px-4 py-2 text-sm text-white">{error}</div>}
       {opened && (
         <CasePanel
