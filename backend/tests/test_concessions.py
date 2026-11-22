@@ -95,6 +95,25 @@ def test_read_only_sign_ins_cannot_record_a_concession(desk, key):
     assert desk.post(URL, headers={"X-Access-Key": key}, json=PAYLOAD).status_code == 403
 
 
+def test_viewer_can_preview_an_unsigned_recovery_without_recording_approval(desk, tmp_path):
+    with closing(connect(tmp_path / "state.sqlite")) as conn:
+        decision = json.loads(conn.execute("SELECT decision FROM cases").fetchone()[0])
+        decision["options"][0]["arrives_by"] = "2026-01-01T12:00"
+        conn.execute("UPDATE cases SET decision = ?", (json.dumps(decision),))
+        conn.commit()
+    viewer = {"X-Access-Key": "shared-test-key"}
+    result = desk.get("/api/overview", headers=viewer).json()
+    assert result["forecast"]["products"][0]["short"] == 6
+    assert result["forecast_with_proposed_concessions"]["products"][0]["short"] == 0
+    assert result["forecast_with_concessions"] is None
+    assert result["cases"][0]["concession_approval"] is None
+    assert result["recorded_releases"] == [] and result["audit"] == []
+    assert desk.post(URL, headers=APPROVER, json=PAYLOAD).status_code == 201
+    approved = desk.get("/api/overview", headers=viewer).json()
+    assert approved["forecast_with_concessions"]["products"][0]["short"] == 0
+    assert approved["forecast_with_proposed_concessions"] is None
+
+
 def test_recovery_comparison_separates_launch_shortfall_from_late_parts(desk, tmp_path):
     with closing(connect(tmp_path / "state.sqlite")) as conn:
         decision = json.loads(conn.execute("SELECT decision FROM cases").fetchone()[0])

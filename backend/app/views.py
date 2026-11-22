@@ -81,10 +81,7 @@ def recorded_concession(conn: sqlite3.Connection, key: str, batch: str | None = 
     return dict(row) if row else None
 
 
-def _release_estimate(case: dict, target: dict | None) -> datetime | None:
-    approval = case["concession_approval"]
-    if not target or not approval or approval["quantity"] > target["held_quantity"]:
-        return None
+def _release_estimate(case: dict) -> datetime | None:
     try:
         estimate = datetime.fromisoformat(case["recommended"]["arrives_by"])
     except (KeyError, TypeError, ValueError):
@@ -181,6 +178,7 @@ def overview(conn: sqlite3.Connection, now: datetime, demo_ready_times: dict[str
     open_parts = frozenset(c["material_id"] for c in cases)
     releases = []
     recorded_releases = []
+    proposed_releases = []
     for case in cases:
         target = concession_target(case, assessment.findings)
         case["concession_target"] = None if target is None else {
@@ -188,13 +186,16 @@ def overview(conn: sqlite3.Connection, now: datetime, demo_ready_times: dict[str
                                                int(components.get(case["material_id"], {}).get("gap", 0))),
         }
         case["concession_approval"] = recorded_concession(conn, case["key"], target["batch"] if target else None)
-        estimate = _release_estimate(case, target)
+        estimate = _release_estimate(case) if target else None
         if estimate and deadline and estimate < deadline and case["material_id"] in components:
             approval = case["concession_approval"]
-            releases.append((estimate, case["material_id"], approval["quantity"]))
-            recorded_releases.append({"case_key": case["key"], "description": case["description"] or case["material_id"],
-                                      "quantity": approval["quantity"], "recorded_at": approval["recorded_at"],
-                                      "expected_at": estimate.isoformat(timespec="minutes")})
+            if approval and approval["quantity"] <= target["held_quantity"]:
+                releases.append((estimate, case["material_id"], approval["quantity"]))
+                recorded_releases.append({"case_key": case["key"], "description": case["description"] or case["material_id"],
+                                          "quantity": approval["quantity"], "recorded_at": approval["recorded_at"],
+                                          "expected_at": estimate.isoformat(timespec="minutes")})
+            elif not approval and (quantity := case["concession_target"]["suggested_quantity"]) > 0:
+                proposed_releases.append((estimate, case["material_id"], quantity))
         alone = simulate(conn, assessment, priority["order"], covered=frozenset({case["material_id"]}))
         after = {p["product_id"]: p for p in alone.get("products", [])}
         case["saves_alone"] = sum(base[p] - after[p]["short"] for p in base if p in after)
@@ -205,16 +206,19 @@ def overview(conn: sqlite3.Connection, now: datetime, demo_ready_times: dict[str
     plan = {"short_now": sum(base.values()),
             "short_if_all_solved": sum(p["short"] for p in solved.get("products", [])) if solved.get("ready") else None}
     recovery = simulate(conn, assessment, priority["order"], with_actions=True, planned_releases=tuple(releases)) if releases else None
+    proposed = simulate(conn, assessment, priority["order"], with_actions=True,
+                        planned_releases=tuple(proposed_releases)) if not recovery and proposed_releases else None
+    comparison_forecast = recovery or proposed
     recovery_comparison = None
     demo_recovery = None
-    if recovery and recovery["ready"] and deadline:
+    if comparison_forecast and comparison_forecast["ready"] and deadline:
         before = simulate(conn, assessment, priority["order"], include_commitments=False) if conn.execute(
             "SELECT 1 FROM commitments LIMIT 1").fetchone() else evidence
         recovery_comparison = {
             "without_supplier_commitments": sum(p["short"] for p in before["products"]),
-            "late_parts": _late_parts(conn, assessment, recovery, deadline),
+            "late_parts": _late_parts(conn, assessment, comparison_forecast, deadline),
         }
-        if demo_ready_times:
+        if recovery and demo_ready_times:
             demo_recovery = _demo_recovery(conn, assessment, priority["order"], recovery, releases, demo_ready_times)
     last_sync = conn.execute("SELECT * FROM sync_runs ORDER BY id DESC LIMIT 1").fetchone()
     drops = conn.execute("SELECT ts, path, kind FROM file_events WHERE baseline = 0 ORDER BY id DESC LIMIT 30").fetchall()
@@ -225,6 +229,7 @@ def overview(conn: sqlite3.Connection, now: datetime, demo_ready_times: dict[str
         "now": now.isoformat(timespec="minutes"),
         "forecast": evidence, "erp_forecast": erp, "forecast_if_acted": acted, "priority": priority,
         "forecast_with_concessions": recovery, "recorded_releases": recorded_releases,
+        "forecast_with_proposed_concessions": proposed,
         "recovery_comparison": recovery_comparison,
         "demo_recovery": demo_recovery,
         "findings": findings, "cases": cases, "plan": plan,

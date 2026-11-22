@@ -91,12 +91,16 @@ export function DockHero({ data, picks, onOpen }: { data: Overview; picks: Forec
   useEffect(() => setView((v) => (hasPicks ? "picks" : v === "picks" ? null : v)), [hasPicks]);
   const recorded = data.forecast_with_concessions?.ready ? data.forecast_with_concessions : null;
   const demo = data.demo_recovery?.forecast.ready ? data.demo_recovery : null;
-  const recoveryForecast = demo?.forecast ?? recorded;
+  const proposed = data.forecast_with_proposed_concessions?.ready ? data.forecast_with_proposed_concessions : null;
+  const recoveryForecast = demo?.forecast ?? recorded ?? proposed;
   const recovery = { id: "recovery" as View, label: "Recovery plan",
-    title: demo ? "If parts are ready earlier" : recorded ? "If signed concessions are released in time" : "What the recovery plan needs",
+    title: demo ? "If parts are ready earlier" : recorded ? "If signed concessions are released in time"
+      : proposed ? "What the proposed recovery plan could achieve" : "What the recovery plan needs",
     note: demo
       ? "Demo assumptions only. The earlier targets do not confirm delivery or release. This plan still assumes the port pickup."
-      : "Assumes the recorded quantities become usable at the estimated times and action-dependent shipments arrive. Sign-off does not confirm release or pickup.",
+      : proposed && !recorded
+        ? "Read-only forecast. Assumes the proposed held stock becomes available and action-dependent shipments arrive. Approval, release and pickup are not confirmed here."
+        : "Assumes the recorded quantities become usable at the estimated times and action-dependent shipments arrive. Sign-off does not confirm release or pickup.",
   };
   const views = [...VIEWS, recovery, ...(picks ? [PICKS] : [])];
   const forecasts: Record<View, Forecast> = { erp: data.erp_forecast, evidence: data.forecast,

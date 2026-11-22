@@ -136,6 +136,7 @@ export type Overview = {
   erp_forecast: Forecast;
   forecast_if_acted: Forecast;
   forecast_with_concessions?: Forecast | null;
+  forecast_with_proposed_concessions?: Forecast | null;
   recovery_comparison?: {
     without_supplier_commitments: number;
     late_parts: LatePart[];
