@@ -67,7 +67,7 @@ function HowTo() {
 
 /** How urgent a case is, told from the forecast: P0 stops a line first, P1 is short, P2 is not short. */
 type Urgency = { rank: "P0" | "P1" | "P2"; stop: string | null };
-const RANK = { P0: "bg-bad text-white", P1: "bg-warn-soft text-warn-ink ring-1 ring-warn/40", P2: "bg-accent-soft text-ink-2" };
+const RANK = { P0: "bg-accent-600 text-white", P1: "bg-warn-soft text-warn-ink ring-1 ring-warn/40", P2: "bg-accent-soft text-ink-2" };
 
 function Rank({ urgency }: { urgency: Urgency }) {
   const meaning = { P0: "stops a line first", P1: "short, but another part stops the line first", P2: "not short" }[urgency.rank];
@@ -158,7 +158,7 @@ function EvidenceList({ findings }: { findings: Finding[] }) {
         <details key={f.key} className="py-2.5 first:pt-0 last:pb-0">
           <summary className="flex cursor-pointer list-none items-start justify-between gap-3 text-sm">
             <span className="min-w-0">
-              <span className={`mr-2 inline-block h-2 w-2 rounded-full ${f.level === "stops_line" ? "bg-bad" : f.level === "watch" ? "bg-warn" : "bg-accent"}`} />
+              <span className={`mr-2 inline-block h-2 w-2 rounded-full ${f.level === "stops_line" ? "bg-bad" : f.level === "watch" ? "bg-warn" : "bg-muted/40"}`} />
               <span className="font-medium">{f.title}</span>
             </span>
             <span className="shrink-0"><Chip tone={LEVEL[f.level][1]}>{LEVEL[f.level][0]}</Chip></span>

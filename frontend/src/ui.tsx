@@ -61,7 +61,7 @@ const TONES: Record<Tone, string> = {
   bad: "bg-bad-soft text-bad-ink ring-1 ring-bad/20",
   warn: "bg-warn-soft text-warn-ink",
   good: "bg-good-soft text-good-ink",
-  neutral: "bg-accent-soft text-ink-2",
+  neutral: "bg-band text-ink-2 ring-1 ring-line",
 };
 
 export function Chip({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {

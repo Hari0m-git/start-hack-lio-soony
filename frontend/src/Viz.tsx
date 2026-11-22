@@ -13,7 +13,7 @@ export function Ring({ share, tone = "accent", size = 56, children }: { share: n
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg viewBox="0 0 56 56" className="-rotate-90" aria-hidden>
-        <circle cx="28" cy="28" r={r} fill="none" strokeWidth="6" className="stroke-accent-soft" />
+        <circle cx="28" cy="28" r={r} fill="none" strokeWidth="6" className="stroke-line" />
         <circle
           cx="28" cy="28" r={r} fill="none" strokeWidth="6" strokeLinecap="round"
           strokeDasharray={`${filled} ${around}`}
@@ -59,7 +59,7 @@ export function LineTimeline({ forecast, now, partName }: { forecast: Forecast; 
     return { p, stretches, sameStop };
   });
   const look: Record<Stretch["state"], string> = {
-    run: "bg-good/55", wait: "bg-bad text-white", night: "bg-line/60 text-muted", done: "bg-accent-soft text-ink-2",
+    run: "bg-good", wait: "bg-accent-600 text-white", night: "bg-line/60 text-muted", done: "bg-accent-soft text-ink-2",
   };
 
   return (
@@ -99,8 +99,8 @@ export function LineTimeline({ forecast, now, partName }: { forecast: Forecast; 
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-        <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-good/55" />packing</span>
-        <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-bad" />line stands, waiting for a part</span>
+        <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-good" />packing</span>
+        <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-accent-600" />line stands, waiting for a part</span>
         <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-line" />night, no shift</span>
         <span><i className="mr-1.5 inline-block h-3 w-0.5 bg-ink align-middle" />now</span>
         <span>from {when(forecast.as_of)} until the trucks leave {when(forecast.deadline)}</span>
@@ -129,8 +129,8 @@ export function Levers({ cases, plan, picked, onToggle, onClear, onOpen, result,
               <span className="truncate font-medium">{c.description}</span>
               <span className="shrink-0 font-display font-semibold" title="Copies saved by solving this part alone">{num(c.saves_alone)}</span>
             </span>
-            <span className="mt-1 block h-2 overflow-hidden rounded-full bg-accent-soft">
-              <span className="block h-full rounded-full bg-coral transition-[width] duration-700 ease-out" style={{ width: `${(100 * c.saves_alone) / total}%` }} />
+            <span className="mt-1 block h-2.5 overflow-hidden rounded-full bg-line">
+              <span className="block h-full rounded-full bg-good transition-[width] duration-700 ease-out" style={{ width: `${(100 * c.saves_alone) / total}%` }} />
             </span>
             <span className="mt-1 flex items-baseline justify-between gap-2 text-xs text-muted">
               <span className="truncate">{c.then_limited_by.length > 0 ? `alone: then ${c.then_limited_by.join(" and ")} hold the line` : "alone: frees its line"}</span>
@@ -170,8 +170,8 @@ export function Levers({ cases, plan, picked, onToggle, onClear, onOpen, result,
   );
 }
 
-const SLICES = ["stroke-accent-600", "stroke-coral", "stroke-peach", "stroke-good", "stroke-warn", "stroke-bad", "stroke-accent"];
-const DOTS = ["bg-accent-600", "bg-coral", "bg-peach", "bg-good", "bg-warn", "bg-bad", "bg-accent"];
+const SLICES = ["stroke-good", "stroke-accent-600", "stroke-coral", "stroke-peach", "stroke-muted", "stroke-accent-700", "stroke-ink-2"];
+const DOTS = ["bg-good", "bg-accent-600", "bg-coral", "bg-peach", "bg-muted", "bg-accent-700", "bg-ink-2"];
 
 /** Shares of a whole as a ring, with the legend beside it. */
 export function Donut({ slices, centre, caption }: { slices: { label: string; value: number; note?: string }[]; centre: string; caption: string }) {
@@ -183,7 +183,7 @@ export function Donut({ slices, centre, caption }: { slices: { label: string; va
     <div className="flex flex-wrap items-center gap-5">
       <div className="relative h-36 w-36 shrink-0">
         <svg viewBox="0 0 100 100" className="-rotate-90" aria-hidden>
-          <circle cx="50" cy="50" r={r} fill="none" strokeWidth="13" className="stroke-accent-soft" />
+          <circle cx="50" cy="50" r={r} fill="none" strokeWidth="13" className="stroke-line" />
           {total > 0 && slices.map((s, i) => {
             const length = (around * s.value) / total;
             const arc = (
@@ -217,7 +217,7 @@ export function Gauge({ used, limit, label }: { used: number; limit: number; lab
   return (
     <div className="relative mx-auto w-52">
       <svg viewBox="0 0 100 56" aria-hidden>
-        <path d="M10 50 A40 40 0 0 1 90 50" fill="none" strokeWidth="11" strokeLinecap="round" className="stroke-accent-soft" />
+        <path d="M10 50 A40 40 0 0 1 90 50" fill="none" strokeWidth="11" strokeLinecap="round" className="stroke-line" />
         <path
           d="M10 50 A40 40 0 0 1 90 50" fill="none" strokeWidth="11" strokeLinecap="round"
           strokeDasharray={`${half * share} ${half}`}
@@ -234,12 +234,12 @@ export function Gauge({ used, limit, label }: { used: number; limit: number; lab
 
 type Event = Overview["activity"][number];
 export const KIND: Record<Event["kind"], { label: string; dot: string }> = {
-  files: { label: "New files", dot: "bg-accent-600" },
+  files: { label: "New files", dot: "bg-muted" },
   sent_by_agent: { label: "Agent asked", dot: "bg-coral" },
-  sent_by_human: { label: "You approved", dot: "bg-warn" },
+  sent_by_human: { label: "You approved", dot: "bg-peach" },
   reply: { label: "Supplier answered", dot: "bg-good" },
-  handover: { label: "Handed to you", dot: "bg-bad" },
-  foreign: { label: "Not sent by the agents", dot: "bg-peach" },
+  handover: { label: "Handed to you", dot: "bg-accent-600" },
+  foreign: { label: "Not sent by the agents", dot: "bg-accent-700" },
 };
 
 /** The day at a glance: one lane per kind of event, one dot per event, placed by its time. */

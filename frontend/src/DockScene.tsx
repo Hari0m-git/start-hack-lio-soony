@@ -16,7 +16,7 @@ export function readPalette(): Palette {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string) => css.getPropertyValue(name).trim();
   return {
-    ground: v("--color-accent-soft"), wall: v("--color-solid"), roof: v("--color-coral"), belt: v("--color-line"),
+    ground: v("--color-floor"), wall: v("--color-solid"), roof: v("--color-coral"), belt: v("--color-line"),
     accent: v("--color-accent"), bad: v("--color-bad"), good: v("--color-good"), coral: v("--color-coral"), peach: v("--color-peach"), ink: v("--color-ink-2"),
   };
 }
@@ -73,7 +73,7 @@ function Line({ z, line, palette, ghostMaterial }: { z: number; line: DockLine; 
   const glow = useRef(line.stopped ? 1 : 0);
   const offset = useRef(0);
   const station = useMemo(() => new MeshStandardMaterial({ roughness: 0.6 }), []);
-  const running = useMemo(() => new Color(palette.good), [palette]); // green runs, wine stands
+  const running = useMemo(() => new Color(palette.good), [palette]); // a running line is dark, a standing one crimson
   const halted = useMemo(() => new Color(palette.bad), [palette]);
 
   useFrame((state, dt) => {

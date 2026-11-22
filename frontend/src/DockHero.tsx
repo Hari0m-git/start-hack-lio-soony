@@ -141,8 +141,8 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
                     {num(p.packed + p.packed_by_deadline)} of {num(p.day_one_demand)} by {when(f.deadline)}
                   </span>
                 </div>
-                <div className="mt-1.5 flex h-2.5 overflow-hidden rounded-full bg-accent-soft" role="img" aria-label={`${num(p.packed)} packed, ${num(p.packed_by_deadline)} still feasible, ${num(p.short)} short`}>
-                  <div className="bg-accent-600 transition-[width] duration-500 ease-out" style={{ width: share(p.packed) }} />
+                <div className="mt-1.5 flex h-3 overflow-hidden rounded-full bg-line" role="img" aria-label={`${num(p.packed)} packed, ${num(p.packed_by_deadline)} still feasible, ${num(p.short)} short`}>
+                  <div className="bg-good transition-[width] duration-500 ease-out" style={{ width: share(p.packed) }} />
                   <div className="bg-coral transition-[width] duration-500 ease-out" style={{ width: share(p.packed_by_deadline) }} />
                   <div className="hatch transition-[width] duration-500 ease-out" style={{ width: share(p.short) }} />
                 </div>
@@ -158,7 +158,7 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
           })}
 
           <p className="mt-auto text-xs text-muted">
-            {meta.note} <span className="whitespace-nowrap">Crimson: packed · coral: still feasible · hatched: short.</span>
+            {meta.note} <span className="whitespace-nowrap">Dark: packed · coral: still feasible · hatched: short.</span>
           </p>
         </div>
       </div>
