@@ -7,12 +7,13 @@ import { Card, Label, useCountUp } from "./ui";
 // The 3D code is fetched only after the data is on screen.
 const DockScene = lazy(() => import("./DockScene"));
 
-type View = "erp" | "evidence" | "acted";
+type View = "erp" | "evidence" | "acted" | "picks";
 const VIEWS: { id: View; label: string; title: string; note: string }[] = [
   { id: "erp", label: "System view", title: "What the system says", note: "Stock and deliveries exactly as Soony's ERP shows them." },
   { id: "evidence", label: "Evidence view", title: "What the paperwork supports", note: "Only what delivery notes, inspections and supplier mails support." },
   { id: "acted", label: "If we act", title: "If the open actions land", note: "Also counts goods that only arrive if somebody acts, such as the container at the port." },
 ];
+const PICKS = { id: "picks" as View, label: "Your picks", title: "With the fixes you ticked", note: "Assumes the parts you ticked below are no longer short. Ticking only simulates." };
 
 const editionName = (name: string | null, id: string) => name?.replace(/^.*? – /, "").replace(/ \(.*/, "") ?? id;
 
@@ -36,7 +37,7 @@ export class Quiet extends Component<{ children: ReactNode }, { failed: boolean 
   }
 }
 
-export function DockHero({ data }: { data: Overview }) {
+export function DockHero({ data, picks }: { data: Overview; picks: Forecast | null }) {
   // A link can open the hero on a given view (…/?view=erp), so the story can be shared.
   const [view, setView] = useState<View>(() => {
     const asked = new URLSearchParams(location.search).get("view") as View | null;
@@ -61,7 +62,11 @@ export function DockHero({ data }: { data: Overview }) {
     };
   }, [three]);
 
-  const forecasts: Record<View, Forecast> = { erp: data.erp_forecast, evidence: data.forecast, acted: data.forecast_if_acted };
+  // Ticking a fix below brings its own view; clearing the ticks takes it away again.
+  const hasPicks = !!picks;
+  useEffect(() => setView((v) => (hasPicks ? "picks" : v === "picks" ? "evidence" : v)), [hasPicks]);
+  const views = picks ? [...VIEWS, PICKS] : VIEWS;
+  const forecasts: Record<View, Forecast> = { erp: data.erp_forecast, evidence: data.forecast, acted: data.forecast_if_acted, picks: picks ?? data.forecast };
   const f = forecasts[view];
   const partName = new Map(data.forecast.components.map((c) => [c.material_id, c.description ?? c.material_id]));
   const short = f.products.reduce((sum, p) => sum + p.short, 0);
@@ -78,7 +83,7 @@ export function DockHero({ data }: { data: Overview }) {
     ghosts: perGhost ? Math.min(12, Math.ceil(p.short / perGhost)) : 0,
   }));
   const container = view === "acted" && data.forecast.components.some((c) => c.inbound_needing_action > 0);
-  const meta = VIEWS.find((v) => v.id === view)!;
+  const meta = views.find((v) => v.id === view) ?? VIEWS[1];
 
   return (
     <Card className="overflow-hidden">
@@ -88,7 +93,7 @@ export function DockHero({ data }: { data: Overview }) {
           <div className="mt-0.5 font-display text-lg font-semibold">{meta.title}</div>
         </div>
         <div role="radiogroup" aria-label="Which forecast to show" className="flex max-w-full rounded-full border border-line bg-card p-1 text-sm">
-          {VIEWS.map((v) => (
+          {views.map((v) => (
             <button
               key={v.id}
               role="radio"
@@ -139,7 +144,7 @@ export function DockHero({ data }: { data: Overview }) {
                 <div className="mt-1.5 flex h-2.5 overflow-hidden rounded-full bg-accent-soft" role="img" aria-label={`${num(p.packed)} packed, ${num(p.packed_by_deadline)} still feasible, ${num(p.short)} short`}>
                   <div className="bg-accent-600 transition-[width] duration-500 ease-out" style={{ width: share(p.packed) }} />
                   <div className="bg-sky transition-[width] duration-500 ease-out" style={{ width: share(p.packed_by_deadline) }} />
-                  <div className="bg-bad transition-[width] duration-500 ease-out" style={{ width: share(p.short) }} />
+                  <div className="hatch transition-[width] duration-500 ease-out" style={{ width: share(p.short) }} />
                 </div>
                 <div className={`mt-1.5 text-sm ${p.short > 0 ? "text-bad-ink" : "text-good-ink"}`}>
                   {p.short > 0 && p.first_stop
@@ -153,7 +158,7 @@ export function DockHero({ data }: { data: Overview }) {
           })}
 
           <p className="mt-auto text-xs text-muted">
-            {meta.note} <span className="whitespace-nowrap">Dark: packed · blue: still feasible · coral: short.</span>
+            {meta.note} <span className="whitespace-nowrap">Dark: packed · blue: still feasible · hatched: short.</span>
           </p>
         </div>
       </div>

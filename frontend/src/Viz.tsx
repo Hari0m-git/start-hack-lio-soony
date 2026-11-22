@@ -51,8 +51,12 @@ export function LineTimeline({ forecast, now, partName }: { forecast: Forecast; 
       if (last?.state === state) last.to = to;
       else stretches.push({ from, to, state });
     });
-    // The forecast names the part behind the first stop only; later stops may be for another part.
-    return { p, stretches, firstWait: stretches.find((s) => s.state === "wait") };
+    // The forecast names the part behind the first stop only. Until the line runs again it is still that stop;
+    // a stop after the line has run again may be for another part.
+    const first = stretches.findIndex((s) => s.state === "wait");
+    const again = stretches.findIndex((s, i) => i > first && s.state === "run");
+    const sameStop = new Set(first < 0 ? [] : stretches.filter((s, i) => s.state === "wait" && i >= first && (again < 0 || i < again)));
+    return { p, stretches, sameStop };
   });
   const look: Record<Stretch["state"], string> = {
     run: "bg-good/55", wait: "bg-bad text-white", night: "bg-line/60 text-muted", done: "bg-accent-soft text-ink-2",
@@ -61,7 +65,7 @@ export function LineTimeline({ forecast, now, partName }: { forecast: Forecast; 
   return (
     <div>
       <div className="space-y-3">
-        {rows.map(({ p, stretches, firstWait }) => (
+        {rows.map(({ p, stretches, sameStop }) => (
           <div key={p.product_id} className="grid items-center gap-x-3 gap-y-1 sm:grid-cols-[9.5rem_1fr]">
             <div className="text-sm font-semibold">{editionName(p.name, p.product_id)}</div>
             <div className="relative h-8 overflow-hidden rounded-lg bg-paper ring-1 ring-line">
@@ -73,7 +77,7 @@ export function LineTimeline({ forecast, now, partName }: { forecast: Forecast; 
                   title={`${s.state === "run" ? "Packing" : s.state === "wait" ? "Waiting for a part" : s.state === "night" ? "Night, no shift" : "Finished"} · ${when(new Date(s.from).toISOString())} to ${when(new Date(s.to).toISOString())}`}
                 >
                   {s.state === "wait"
-                    ? s === firstWait && p.first_stop
+                    ? sameStop.has(s) && p.first_stop
                       ? `waits for ${partName.get(p.first_stop.material_id) ?? p.first_stop.material_id}`
                       : "waits for a part"
                     : s.state === "night" ? "night" : s.state === "done" ? "done" : ""}
@@ -105,38 +109,63 @@ export function LineTimeline({ forecast, now, partName }: { forecast: Forecast; 
   );
 }
 
-/** What solving each part alone would save, as bars against everything that is short today. */
-export function WorthBars({ cases, plan, onOpen }: { cases: Case[]; plan: Overview["plan"]; onOpen: (key: string) => void }) {
+/** Tick a fix to see what the launch looks like with it. Each row also shows what that fix is worth alone. */
+export function Levers({ cases, plan, picked, onToggle, onClear, onOpen, result, loading }: {
+  cases: Case[]; plan: Overview["plan"]; picked: Set<string>; onToggle: (materialId: string) => void; onClear: () => void;
+  onOpen: (key: string) => void; result: Forecast | null; loading: boolean;
+}) {
   const total = Math.max(1, plan.short_now);
-  const together = plan.short_if_all_solved == null ? null : plan.short_now - plan.short_if_all_solved;
+  const left = result ? result.products.reduce((sum, p) => sum + p.short, 0) : null;
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {[...cases].sort((a, b) => b.saves_alone - a.saves_alone).map((c) => (
-        <button key={c.key} onClick={() => onOpen(c.key)} className="block w-full rounded-lg text-left hover:bg-accent-soft/60">
-          <div className="flex items-baseline justify-between gap-3 text-sm">
-            <span className="truncate font-medium">{c.description}</span>
-            <span className="shrink-0 font-display font-semibold">{num(c.saves_alone)}</span>
-          </div>
-          <div className="mt-1 h-2.5 overflow-hidden rounded-full bg-accent-soft">
-            <div className="h-full rounded-full bg-sky transition-[width] duration-700 ease-out" style={{ width: `${(100 * c.saves_alone) / total}%` }} />
-          </div>
-          {c.then_limited_by.length > 0 && <div className="mt-1 truncate text-xs text-muted">then {c.then_limited_by.join(" and ")} hold the line</div>}
-        </button>
+        <label
+          key={c.key}
+          className="flex cursor-pointer gap-3 rounded-xl border border-line p-3 transition-colors hover:bg-accent-soft/50 has-[:checked]:border-accent-600 has-[:checked]:bg-accent-soft/60"
+        >
+          <input type="checkbox" checked={picked.has(c.material_id)} onChange={() => onToggle(c.material_id)} className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-accent-600)]" />
+          <span className="min-w-0 flex-1">
+            <span className="flex items-baseline justify-between gap-3 text-sm">
+              <span className="truncate font-medium">{c.description}</span>
+              <span className="shrink-0 font-display font-semibold" title="Copies saved by solving this part alone">{num(c.saves_alone)}</span>
+            </span>
+            <span className="mt-1 block h-2 overflow-hidden rounded-full bg-accent-soft">
+              <span className="block h-full rounded-full bg-sky transition-[width] duration-700 ease-out" style={{ width: `${(100 * c.saves_alone) / total}%` }} />
+            </span>
+            <span className="mt-1 flex items-baseline justify-between gap-2 text-xs text-muted">
+              <span className="truncate">{c.then_limited_by.length > 0 ? `alone: then ${c.then_limited_by.join(" and ")} hold the line` : "alone: frees its line"}</span>
+              <button className="shrink-0 font-medium text-accent-ink hover:underline" onClick={(e) => (e.preventDefault(), onOpen(c.key))}>
+                Open ›
+              </button>
+            </span>
+          </span>
+        </label>
       ))}
-      {together != null && (
-        <div className="border-t border-line pt-3">
-          <div className="flex items-baseline justify-between gap-3 text-sm">
-            <span className="font-semibold">All of them together</span>
-            <span className="shrink-0 font-display font-semibold text-good-ink">{num(together)}</span>
+      <div className="rounded-xl bg-paper p-3 text-sm ring-1 ring-line" aria-live="polite">
+        {picked.size === 0 ? (
+          <span className="text-muted">
+            Tick one or more to simulate.{" "}
+            {plan.short_if_all_solved != null && (plan.short_if_all_solved > 0 ? `All together still leave ${num(plan.short_if_all_solved)} copies short.` : "All together pack every copy in time.")}
+          </span>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span>
+              With your {picked.size} pick{picked.size > 1 ? "s" : ""}:{" "}
+              {left == null || loading ? (
+                <span className="text-muted">working it out…</span>
+              ) : (
+                <span className={`font-display text-lg font-semibold ${left > 0 ? "text-bad-ink" : "text-good-ink"}`}>
+                  {left > 0 ? `${num(left)} copies still miss the launch` : "every copy is packed in time"}
+                </span>
+              )}
+            </span>
+            <button className="font-medium text-accent-ink hover:underline" onClick={onClear}>
+              Clear
+            </button>
           </div>
-          <div className="mt-1 h-2.5 overflow-hidden rounded-full bg-accent-soft">
-            <div className="h-full rounded-full bg-good transition-[width] duration-700 ease-out" style={{ width: `${(100 * together) / total}%` }} />
-          </div>
-          <div className="mt-1 text-xs text-muted">
-            {plan.short_if_all_solved ? `${num(plan.short_if_all_solved)} copies would still miss the launch` : "every copy is packed in time"}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
+      <p className="text-xs text-muted">Ticking only simulates. Nothing is ordered, approved or sent.</p>
     </div>
   );
 }

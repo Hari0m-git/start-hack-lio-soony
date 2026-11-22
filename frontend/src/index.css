@@ -171,6 +171,11 @@ button:disabled {
   animation: pulse-node 1.6s ease-out infinite;
 }
 
+/* What is short is drawn hatched, so it reads as "not there" rather than as one more colour. */
+.hatch {
+  background-image: repeating-linear-gradient(135deg, var(--color-bad) 0 4px, var(--color-bad-soft) 4px 8px);
+}
+
 .flip {
   perspective: 1200px;
 }

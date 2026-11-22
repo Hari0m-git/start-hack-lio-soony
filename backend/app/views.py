@@ -147,6 +147,12 @@ def activity(conn: sqlite3.Connection, facts: Facts, limit: int = 40) -> list[di
     return items[:limit]
 
 
+def whatif(conn: sqlite3.Connection, now: datetime, parts: set[str]) -> dict:
+    """The forecast if the given parts were no longer short. Pure arithmetic: nothing is stored, sent or paid for."""
+    assessment = assess(conn, now.date())
+    return simulate(conn, assessment, priority_order(conn)["order"], covered=frozenset(parts))
+
+
 def spend(conn: sqlite3.Connection, now: datetime) -> dict:
     """What the agents have cost today, by kind of work."""
     start = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")

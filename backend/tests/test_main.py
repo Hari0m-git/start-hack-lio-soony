@@ -137,3 +137,9 @@ def test_a_refused_approval_is_on_the_record(client, tmp_path, monkeypatch):
     assert client.post(f"/api/messages/{mid}/send", headers={"X-Access-Key": "pw"}).status_code == 403
     assert tuple(conn.execute("SELECT actor, action FROM audit").fetchone()) == ("Paul Winter", "approval refused")
     assert conn.execute("SELECT status FROM messages WHERE id = ?", (mid,)).fetchone()[0] == "draft"
+
+
+def test_what_if_reads_only_and_sits_behind_the_key(client, monkeypatch):
+    assert client.get("/api/whatif?parts=CMP-1,CMP-2").json()["ready"] is False   # nothing read yet: says so, no error
+    monkeypatch.setenv("APP_ACCESS_KEY", "shared")
+    assert client.get("/api/whatif?parts=CMP-1").status_code == 401

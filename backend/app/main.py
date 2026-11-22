@@ -156,6 +156,12 @@ def status(conn=Depends(db)) -> dict:
     return {"files": files, "last_sync": dict(last) if last else None, "drops": [dict(d) for d in drops]}
 
 
+@app.get("/api/whatif")
+def whatif(parts: str = Query(""), conn=Depends(db), user: dict = Depends(guard)) -> dict:
+    """What the launch would look like if the named parts were solved. Reads only."""
+    return views.whatif(conn, datetime.now(LOCAL), {p.strip() for p in parts.split(",") if p.strip()})
+
+
 @app.get("/api/me")
 def me(user: dict = Depends(guard)) -> dict:
     return user

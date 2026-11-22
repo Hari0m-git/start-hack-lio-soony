@@ -1,10 +1,10 @@
-import { useState } from "react";
-import type { Case, Overview } from "./api";
+import { useEffect, useState } from "react";
+import { fileUrl, getWhatIf, type Case, type Finding, type Forecast, type Overview } from "./api";
 import { PackChart } from "./Chart";
 import { DockHero } from "./DockHero";
-import { clock, money, num, when } from "./format";
+import { clock, fileName, money, num, when } from "./format";
 import { Button, Card, Chip, Label, StateChip } from "./ui";
-import { LineTimeline, Ring, WorthBars } from "./Viz";
+import { Levers, LineTimeline, Ring } from "./Viz";
 
 const HELP_KEY = "foredock.help.dismissed";
 const editionName = (name: string | null, id: string) => name?.replace(/^.*? – /, "").replace(/ \(.*/, "") ?? id;
@@ -65,13 +65,40 @@ function HowTo() {
   );
 }
 
-function ActionCard({ item, onOpen }: { item: Case; onOpen: () => void }) {
+/** How urgent a case is, told from the forecast: P0 stops a line first, P1 is short, P2 is not short. */
+type Urgency = { rank: "P0" | "P1" | "P2"; stop: string | null };
+const RANK = { P0: "bg-bad text-white", P1: "bg-warn-soft text-warn-ink ring-1 ring-warn/40", P2: "bg-accent-soft text-ink-2" };
+
+function Rank({ urgency }: { urgency: Urgency }) {
+  const meaning = { P0: "stops a line first", P1: "short, but another part stops the line first", P2: "not short" }[urgency.rank];
+  return (
+    <span title={`${urgency.rank}: ${meaning}`} className={`rounded-md px-1.5 py-0.5 text-[11px] font-bold tracking-wide ${RANK[urgency.rank]}`}>
+      {urgency.rank}
+    </span>
+  );
+}
+
+/** Decide by, who signs, cost: the things a decision needs, in one line. */
+function Facts({ item, urgency }: { item: Case; urgency: Urgency }) {
+  const rec = item.recommended;
+  const signer = item.approval?.person ?? item.approval?.required_role;
+  return (
+    <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs">
+      {urgency.stop && <div><dt className="inline text-muted">Line stops </dt><dd className="inline font-medium">{when(urgency.stop)}</dd></div>}
+      {signer && <div className="min-w-0 max-w-full truncate"><dt className="inline text-muted">Who signs </dt><dd className="inline font-medium">{signer}</dd></div>}
+      {rec && <div><dt className="inline text-muted">Cost </dt><dd className="inline font-medium">{money(rec.cost, rec.currency)}</dd></div>}
+      {rec && rec.copies_saved > 0 && <div><dt className="inline text-muted">Saves </dt><dd className="inline font-medium">{num(rec.copies_saved)} copies</dd></div>}
+    </dl>
+  );
+}
+
+function ActionCard({ item, urgency, onOpen }: { item: Case; urgency: Urgency; onOpen: () => void }) {
   const rec = item.recommended;
   return (
     <Card className="border-l-4 border-l-bad p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <div className="text-xs text-muted">{item.description}</div>
+          <div className="flex items-center gap-2 text-xs text-muted"><Rank urgency={urgency} /> {item.description}</div>
           <h3 className="text-lg font-semibold leading-snug">{item.card?.headline ?? item.description ?? item.material_id}</h3>
         </div>
         <StateChip state={item.state} />
@@ -99,7 +126,7 @@ function ActionCard({ item, onOpen }: { item: Case; onOpen: () => void }) {
   );
 }
 
-function QuietRow({ item, onOpen }: { item: Case; onOpen: () => void }) {
+function QuietRow({ item, urgency, onOpen }: { item: Case; urgency: Urgency; onOpen: () => void }) {
   const last = [...item.messages].reverse().find((m) => m.status === "sent" || m.status === "received");
   const status =
     item.state === "waiting_for_supplier"
@@ -110,17 +137,75 @@ function QuietRow({ item, onOpen }: { item: Case; onOpen: () => void }) {
   return (
     <button onClick={onOpen} className="flex w-full items-center justify-between gap-4 px-5 py-3.5 text-left hover:bg-paper">
       <div className="min-w-0">
-        <div className="font-medium">
-          {item.card?.headline ?? item.description} <span className="text-xs font-normal text-muted">· {item.description}</span>
+        <div className="flex flex-wrap items-center gap-x-2 font-medium">
+          <Rank urgency={urgency} /> {item.card?.headline ?? item.description} <span className="text-xs font-normal text-muted">· {item.description}</span>
         </div>
-        <div className="truncate text-sm text-muted">{status}</div>
+        <div className="mt-0.5 truncate text-sm text-muted">{status}</div>
+        <Facts item={item} urgency={urgency} />
       </div>
       <span className="shrink-0 text-sm text-accent-ink">Open ›</span>
     </button>
   );
 }
 
+const LEVEL = { stops_line: ["Stops a line", "bad"], watch: ["Watch", "warn"], info: ["No action", "neutral"] } as const;
+
+/** What the agents found, each with its sources one click away. */
+function EvidenceList({ findings }: { findings: Finding[] }) {
+  return (
+    <div className="divide-y divide-line">
+      {findings.map((f) => (
+        <details key={f.key} className="py-2.5 first:pt-0 last:pb-0">
+          <summary className="flex cursor-pointer list-none items-start justify-between gap-3 text-sm">
+            <span className="min-w-0">
+              <span className={`mr-2 inline-block h-2 w-2 rounded-full ${f.level === "stops_line" ? "bg-bad" : f.level === "watch" ? "bg-warn" : "bg-accent"}`} />
+              <span className="font-medium">{f.title}</span>
+            </span>
+            <span className="shrink-0"><Chip tone={LEVEL[f.level][1]}>{LEVEL[f.level][0]}</Chip></span>
+          </summary>
+          <div className="mt-2 pl-4 text-sm">
+            <p className="text-muted">{f.detail}</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {f.evidence.map((e) => (
+                <a key={e.path} href={fileUrl(e.path)} target="_blank" rel="noreferrer" title={e.path} className="rounded-md border border-line bg-paper px-2 py-1 text-xs text-accent-ink hover:underline">
+                  {fileName(e.path)}
+                </a>
+              ))}
+            </div>
+          </div>
+        </details>
+      ))}
+      {findings.length === 0 && <p className="text-sm text-muted">Nothing found yet.</p>}
+    </div>
+  );
+}
+
 export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) => void }) {
+  // The fixes ticked under "What if", and the forecast with them.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [picks, setPicks] = useState<Forecast | null>(null);
+  const [working, setWorking] = useState(false);
+  const pickedKey = [...picked].sort().join(",");
+  const asOf = data.forecast.as_of;
+  useEffect(() => {
+    if (!pickedKey) return setPicks(null);
+    let stale = false;
+    setWorking(true);
+    getWhatIf(pickedKey.split(","))
+      .then((result) => !stale && setPicks(result.ready ? result : null))
+      .catch(() => !stale && setPicks(null))
+      .finally(() => !stale && setWorking(false));
+    return () => {
+      stale = true;
+    };
+  }, [pickedKey, asOf]);
+  const toggle = (id: string) =>
+    setPicked((old) => {
+      const next = new Set(old);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+
   const f = data.forecast;
   const short = f.products.filter((p) => p.short > 0);
   const atRisk = short.reduce((sum, p) => sum + p.short, 0);
@@ -130,6 +215,13 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
   yours.sort((a, b) => stopOf(a.material_id).localeCompare(stopOf(b.material_id)));
   const partName = new Map(f.components.map((c) => [c.material_id, c.description ?? c.material_id]));
   const toPack = f.products.reduce((sum, p) => sum + p.to_pack, 0);
+  const gaps = new Map(f.components.map((c) => [c.material_id, c.gap]));
+  const urgencyOf = (c: Case): Urgency => {
+    const stop = f.products.filter((p) => p.short > 0 && p.first_stop?.material_id === c.material_id).map((p) => p.first_stop!.at).sort()[0] ?? null;
+    return { rank: stop ? "P0" : (gaps.get(c.material_id) ?? 0) > 0 ? "P1" : "P2", stop };
+  };
+  const order = { P0: 0, P1: 1, P2: 2 };
+  theirs.sort((a, b) => order[urgencyOf(a).rank] - order[urgencyOf(b).rank]);
   const sent = data.agent_work.sent_by_agents + data.agent_work.approved_by_people;
 
   return (
@@ -147,7 +239,7 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
         </p>
       </section>
 
-      <DockHero data={data} />
+      <DockHero data={data} picks={picked.size ? picks : null} />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Kpi
@@ -186,7 +278,7 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
             <h2 className="font-display text-lg font-semibold">What needs you now</h2>
             <div className="mt-3 space-y-4">
               {yours.map((c) => (
-                <ActionCard key={c.key} item={c} onOpen={() => onOpen(c.key)} />
+                <ActionCard key={c.key} item={c} urgency={urgencyOf(c)} onOpen={() => onOpen(c.key)} />
               ))}
               {yours.length === 0 && (
                 <Card className="p-5 text-sm text-muted">
@@ -201,22 +293,33 @@ export function Today({ data, onOpen }: { data: Overview; onOpen: (key: string) 
               <h2 className="font-display text-lg font-semibold">The agents are handling</h2>
               <Card className="mt-3 divide-y divide-line overflow-hidden">
                 {theirs.map((c) => (
-                  <QuietRow key={c.key} item={c} onOpen={() => onOpen(c.key)} />
+                  <QuietRow key={c.key} item={c} urgency={urgencyOf(c)} onOpen={() => onOpen(c.key)} />
                 ))}
               </Card>
             </section>
           )}
         </div>
 
-        {data.cases.length > 0 && (
+        <div className="space-y-6">
+          {data.cases.length > 0 && (
+            <section>
+              <h2 className="font-display text-lg font-semibold">
+                What if <span className="ml-1 font-sans text-xs font-normal text-muted">tick a fix to simulate · the number is what it saves alone</span>
+              </h2>
+              <Card className="mt-3 p-4">
+                <Levers cases={data.cases} plan={data.plan} picked={picked} onToggle={toggle} onClear={() => setPicked(new Set())} onOpen={onOpen} result={picks} loading={working} />
+              </Card>
+            </section>
+          )}
           <section>
-            <h2 className="font-display text-lg font-semibold">What each fix is worth</h2>
-            <Card className="mt-3 p-5">
-              <p className="mb-4 text-sm text-muted">Copies saved by solving one part alone. A copy needs every part, so the fixes do not simply add up.</p>
-              <WorthBars cases={data.cases} plan={data.plan} onOpen={onOpen} />
+            <h2 className="font-display text-lg font-semibold">
+              Evidence <span className="ml-1 font-sans text-xs font-normal text-muted">where the system and the paper disagree</span>
+            </h2>
+            <Card className="mt-3 p-4">
+              <EvidenceList findings={data.findings} />
             </Card>
           </section>
-        )}
+        </div>
       </div>
 
       <section>

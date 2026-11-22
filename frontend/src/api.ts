@@ -175,6 +175,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const getOverview = () => call<Overview>("/api/overview");
+/** The forecast if these parts were no longer short. Nothing is changed by asking. */
+export const getWhatIf = (parts: string[]) => call<Forecast>(`/api/whatif?parts=${encodeURIComponent(parts.join(","))}`);
 export const sendMessage = (id: number, approver: string) =>
   call(`/api/messages/${id}/send`, { method: "POST", headers: { "X-Approver": encodeURIComponent(approver) } });
 export const editDraft = (id: number, subject: string, body: string) =>
