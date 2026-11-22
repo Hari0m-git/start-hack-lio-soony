@@ -150,6 +150,15 @@ const KEY = "foredock.key";
 export const accessKey = () => localStorage.getItem(KEY) ?? "";
 export const setAccessKey = (key: string) => localStorage.setItem(KEY, key);
 
+// A sign-in link (…/?key=…) stores the key and removes it from the address straight away.
+const fromLink = new URLSearchParams(location.search).get("key");
+if (fromLink) {
+  setAccessKey(fromLink.trim());
+  const rest = new URLSearchParams(location.search);
+  rest.delete("key");
+  history.replaceState(null, "", location.pathname + (rest.toString() ? `?${rest}` : "") + location.hash);
+}
+
 export class Unauthorized extends Error {}
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {

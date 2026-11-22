@@ -16,7 +16,7 @@ const PAGES: { id: Page; label: string }[] = [
   { id: "agents", label: "Agents" },
 ];
 
-function Gate({ onDone }: { onDone: () => void }) {
+function Gate({ onDone, refused }: { onDone: () => void; refused: boolean }) {
   const [key, setKey] = useState("");
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
@@ -39,6 +39,11 @@ function Gate({ onDone }: { onDone: () => void }) {
             placeholder="Access key"
             className="w-full rounded-lg border border-line px-3 py-2 text-sm"
           />
+          {refused && (
+            <p role="alert" className="text-sm text-bad">
+              That key was not accepted. Check for a typo or an extra space, and that it is the key for this copy of the desk.
+            </p>
+          )}
           <Button disabled={!key.trim()}>Open the desk</Button>
         </form>
       </Card>
@@ -91,7 +96,7 @@ export default function App() {
     };
   }, [load]);
 
-  if (locked) return <Gate onDone={load} />;
+  if (locked) return <Gate onDone={load} refused={!!accessKey()} />;
   if (!data)
     return <div className="flex min-h-screen items-center justify-center text-sm text-muted">{error || "Opening the desk…"}</div>;
 
