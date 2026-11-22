@@ -63,7 +63,7 @@ function Column({ x, part, chosen, onChoose, palette }: {
         {way > 0 && (
           <mesh position={[0, 0.08 + site + way / 2, 0]}>
             <boxGeometry args={[0.9, way, 0.9]} />
-            <meshStandardMaterial color={palette.sky} roughness={0.7} />
+            <meshStandardMaterial color={palette.coral} roughness={0.7} />
           </mesh>
         )}
         {missing > 0 && (
@@ -119,7 +119,7 @@ export default function PartsScene({ parts, chosen, onChoose, active }: {
       <Rig count={parts.length} />
       <ambientLight intensity={1.7} />
       <directionalLight position={[-6, 12, 6]} intensity={2.3} />
-      <directionalLight position={[8, 4, -6]} intensity={0.9} color={palette.sky} />
+      <directionalLight position={[8, 4, -6]} intensity={0.9} color={palette.coral} />
       <mesh position={[0, -0.1, 0]}>
         <boxGeometry args={[parts.length * SHELF_SPACING + 0.6, 0.2, 2.4]} />
         <meshStandardMaterial color={palette.ground} roughness={1} />

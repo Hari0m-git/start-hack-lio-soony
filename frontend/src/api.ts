@@ -211,7 +211,7 @@ export const transcribeClip = (clip: Blob, language: ReplyLanguage | null, signa
     { method: "POST", headers: { "Content-Type": "audio/wav" }, body: clip, signal },
   );
 
-export async function speakAnswer(reply: AssistantReply, language: ReplyLanguage, signal: AbortSignal) {
+export async function speakAnswer(reply: AssistantReply, language: ReplyLanguage | null, signal: AbortSignal) {
   const response = await fetch("/api/voice/speak", {
     method: "POST", headers: { "Content-Type": "application/json", "X-Access-Key": accessKey() },
     body: JSON.stringify({ conversation_id: reply.conversation_id, answer_id: reply.answer_id, language }), signal,

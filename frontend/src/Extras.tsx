@@ -86,7 +86,7 @@ export function AgentLoop({ data }: { data: Overview }) {
           <li key={name} className="relative flex flex-col items-center text-center">
             {i > 0 && <span className="absolute right-1/2 top-5 hidden h-px w-full bg-line lg:block" aria-hidden />}
             <span
-              className={`relative z-[1] flex h-10 w-10 items-center justify-center rounded-full border border-sky bg-accent-soft font-display text-sm font-semibold text-accent-ink ${data.loop.running ? "node-live" : ""}`}
+              className={`relative z-[1] flex h-10 w-10 items-center justify-center rounded-full border border-coral bg-accent-soft font-display text-sm font-semibold text-accent-ink ${data.loop.running ? "node-live" : ""}`}
               style={data.loop.running ? { animationDelay: `${i * 0.18}s` } : undefined}
             >
               {i + 1}

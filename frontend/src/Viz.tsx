@@ -130,7 +130,7 @@ export function Levers({ cases, plan, picked, onToggle, onClear, onOpen, result,
               <span className="shrink-0 font-display font-semibold" title="Copies saved by solving this part alone">{num(c.saves_alone)}</span>
             </span>
             <span className="mt-1 block h-2 overflow-hidden rounded-full bg-accent-soft">
-              <span className="block h-full rounded-full bg-sky transition-[width] duration-700 ease-out" style={{ width: `${(100 * c.saves_alone) / total}%` }} />
+              <span className="block h-full rounded-full bg-coral transition-[width] duration-700 ease-out" style={{ width: `${(100 * c.saves_alone) / total}%` }} />
             </span>
             <span className="mt-1 flex items-baseline justify-between gap-2 text-xs text-muted">
               <span className="truncate">{c.then_limited_by.length > 0 ? `alone: then ${c.then_limited_by.join(" and ")} hold the line` : "alone: frees its line"}</span>
@@ -170,8 +170,8 @@ export function Levers({ cases, plan, picked, onToggle, onClear, onOpen, result,
   );
 }
 
-const SLICES = ["stroke-accent-600", "stroke-sky", "stroke-peach", "stroke-good", "stroke-warn", "stroke-bad", "stroke-accent"];
-const DOTS = ["bg-accent-600", "bg-sky", "bg-peach", "bg-good", "bg-warn", "bg-bad", "bg-accent"];
+const SLICES = ["stroke-accent-600", "stroke-coral", "stroke-peach", "stroke-good", "stroke-warn", "stroke-bad", "stroke-accent"];
+const DOTS = ["bg-accent-600", "bg-coral", "bg-peach", "bg-good", "bg-warn", "bg-bad", "bg-accent"];
 
 /** Shares of a whole as a ring, with the legend beside it. */
 export function Donut({ slices, centre, caption }: { slices: { label: string; value: number; note?: string }[]; centre: string; caption: string }) {
@@ -235,7 +235,7 @@ export function Gauge({ used, limit, label }: { used: number; limit: number; lab
 type Event = Overview["activity"][number];
 export const KIND: Record<Event["kind"], { label: string; dot: string }> = {
   files: { label: "New files", dot: "bg-accent-600" },
-  sent_by_agent: { label: "Agent asked", dot: "bg-sky" },
+  sent_by_agent: { label: "Agent asked", dot: "bg-coral" },
   sent_by_human: { label: "You approved", dot: "bg-warn" },
   reply: { label: "Supplier answered", dot: "bg-good" },
   handover: { label: "Handed to you", dot: "bg-bad" },

@@ -48,7 +48,7 @@ export function PackChart({ productId, evidence, erp }: { productId: string; evi
               ...[...erp.timeline].reverse().map((p) => `${x(p.at).toFixed(1)},${y(Number(p[productId] ?? 0)).toFixed(1)}`)].join(" ")}
           />
         )}
-        <path d={path(erp)} fill="none" className="stroke-sky" strokeWidth="2" strokeDasharray="6 5" />
+        <path d={path(erp)} fill="none" className="stroke-coral" strokeWidth="2" strokeDasharray="6 5" />
         <path d={path(evidence)} fill="none" className="stroke-accent-600" strokeWidth="3" strokeLinejoin="round" />
         {short > 0 && (
           <>
@@ -70,7 +70,7 @@ export function PackChart({ productId, evidence, erp }: { productId: string; evi
           <span className="inline-block h-0.5 w-5 bg-accent-600" /> what the paperwork supports
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block w-5 border-t-2 border-dashed border-sky" /> what the system expects
+          <span className="inline-block w-5 border-t-2 border-dashed border-coral" /> what the system expects
         </span>
       </figcaption>
     </figure>

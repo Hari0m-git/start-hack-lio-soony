@@ -16,7 +16,7 @@ function Coverage({ c }: { c: ComponentForecast }) {
   return (
     <div className="relative h-3 w-full overflow-hidden rounded-full bg-bad-soft">
       <div className="absolute inset-y-0 left-0 bg-good" style={{ width: pct(Math.min(c.usable_stock, scale)) }} />
-      <div className="absolute inset-y-0 bg-sky" style={{ left: pct(c.usable_stock), width: pct(c.inbound_counted) }} />
+      <div className="absolute inset-y-0 bg-coral" style={{ left: pct(c.usable_stock), width: pct(c.inbound_counted) }} />
       <div className="absolute inset-y-0 w-0.5 bg-ink" style={{ left: `calc(${pct(c.need)} - 1px)` }} title={`Needed: ${num(c.need)}`} />
     </div>
   );
@@ -80,7 +80,7 @@ export function Parts({ data, onOpen }: { data: Overview; onOpen: (key: string) 
             <Label>The shelf · each column is one part, as a share of what is needed</Label>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
               <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-good" />on site</span>
-              <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-sky" />on its way</span>
+              <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-coral" />on its way</span>
               <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-bad/45 ring-1 ring-bad/50" />missing</span>
               <span><i className="mr-1.5 inline-block h-0.5 w-3 bg-ink align-middle" />needed</span>
               <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm ring-1 ring-ink" />what the system believes</span>

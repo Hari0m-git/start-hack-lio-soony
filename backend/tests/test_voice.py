@@ -116,3 +116,25 @@ def test_budget_reservations_are_atomic(tmp_path):
     with closing(connect(path)) as conn:
         llm.settle_usage(conn, next(value for value in outcomes if value), 0.1)
         assert llm.reserve_usage(conn, "voice:transcribe", "speech", 0.7, 1)
+
+
+def test_without_azure_answers_are_spoken_by_the_openai_model_in_any_language(pilot, monkeypatch, tmp_path):
+    for name in ("AZURE_SPEECH_REGION", "AZURE_SPEECH_KEY", "AZURE_SPEECH_USD_PER_MILLION_CHARS"):
+        monkeypatch.delenv(name)
+    monkeypatch.setattr(llm, "assistant_chat", lambda *args: {"content": "Pierwsza **linia** stoi."})
+    sent = {}
+
+    class Speech:
+        def post(self, path, **kwargs):
+            sent.update(path=path, **kwargs["json"])
+            return httpx.Response(200, content=b"mp3", request=httpx.Request("POST", "https://example.invalid"))
+
+    monkeypatch.setattr(llm, "client", Speech)
+    assert pilot.get("/api/overview", headers=PERSONAL).json()["voice"]["speak"]
+    answer = pilot.post("/api/assistant/turn", headers=PERSONAL, json={"message": "Status?"}).json()
+    data = {"conversation_id": answer["conversation_id"], "answer_id": answer["answer_id"], "language": None}
+    response = pilot.post("/api/voice/speak", headers=PERSONAL, json=data)
+    assert (response.status_code, response.content) == (200, b"mp3")
+    assert (sent["path"], sent["input"]) == ("/audio/speech", "Pierwsza linia stoi.")   # no asterisks read aloud
+    with closing(connect(tmp_path / "state.sqlite")) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM llm_usage WHERE purpose = 'voice:speak' AND cost_usd > 0").fetchone()[0] == 1

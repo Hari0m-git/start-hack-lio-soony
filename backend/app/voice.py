@@ -14,6 +14,9 @@ from app.config import Settings
 from app.pipeline import DAILY_BUDGET_USD
 
 STT_MODEL = "gpt-transcribe"
+TTS_MODEL = os.environ.get("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+TTS_VOICE = os.environ.get("OPENAI_TTS_VOICE", "alloy")
+OPENAI_SPEECH_USD_PER_MILLION_CHARS = float(os.environ.get("OPENAI_SPEECH_USD_PER_MILLION_CHARS", "20"))
 RATE = 16_000
 MAX_SECONDS = 20
 MAX_AUDIO_BYTES = RATE * MAX_SECONDS * 2 + 44
@@ -31,7 +34,7 @@ class Speak(BaseModel):
     model_config = ConfigDict(extra="forbid")
     conversation_id: str = Field(min_length=1, max_length=40)
     answer_id: str = Field(min_length=1, max_length=40)
-    language: Language
+    language: Language | None = None
 
 
 def pilot_enabled(settings: Settings) -> bool:
@@ -48,11 +51,15 @@ def synthesis_rate() -> float | None:
     return price if math.isfinite(price) and price > 0 else None
 
 
+def azure_ready() -> bool:
+    return bool(os.getenv("AZURE_SPEECH_KEY") and os.getenv("AZURE_SPEECH_REGION") and synthesis_rate())
+
+
 def capabilities(settings: Settings) -> dict:
+    # Answers are read aloud by Azure where it is configured, otherwise by the OpenAI speech model, which speaks
+    # every reply language. Either way the browser does not need a voice installed for that language.
     pilot = pilot_enabled(settings)
-    return {"transcribe": pilot and bool(llm.keys()),
-            "speak": pilot and bool(os.getenv("AZURE_SPEECH_KEY") and os.getenv("AZURE_SPEECH_REGION")
-                                    and synthesis_rate())}
+    return {"transcribe": pilot and bool(llm.keys()), "speak": pilot and (azure_ready() or bool(llm.keys()))}
 
 
 def _normalized_wav(audio: bytes) -> tuple[bytes, float]:
@@ -94,13 +101,31 @@ def transcribe(conn, audio: bytes, language: Language | None) -> dict:
             "language": language or (next(iter(supported)) if len(supported) == 1 else None)}
 
 
-def speak(conn, text: str, language: Language) -> bytes:
-    locale, voice_name = VOICES[language]
+def _speak_openai(conn, text: str) -> bytes:
+    """Read the text aloud with the OpenAI speech model. It takes the language from the text itself."""
+    spoken = text.replace("*", "").replace("`", "")  # the marks of bold and code are not words
+    cost = len(spoken) * OPENAI_SPEECH_USD_PER_MILLION_CHARS / 1_000_000  # an estimate; the provider bills by audio length
+    row = llm.reserve_usage(conn, "voice:speak", TTS_MODEL, cost, DAILY_BUDGET_USD)
+    result = llm.client().post(
+        "/audio/speech", headers={"Authorization": f"Bearer {llm.keys()[0]}"},
+        json={"model": TTS_MODEL, "voice": TTS_VOICE, "input": spoken, "response_format": "mp3"}, timeout=40,
+    )
+    result.raise_for_status()
+    llm.settle_usage(conn, row, cost)
+    return result.content
+
+
+def speak(conn, text: str, language: Language | None) -> bytes:
     text = text.strip()
     if len(text) > MAX_SPEECH_CHARS:
         raise ValueError("The answer is too long for playback.")
     if not text or any(ord(char) < 32 and char not in "\n\r\t" for char in text):
         raise ValueError("Enter valid text to play.")
+    if not azure_ready():
+        return _speak_openai(conn, text)
+    if not language:
+        raise ValueError("Choose a reply language for playback.")
+    locale, voice_name = VOICES[language]
     region = os.environ["AZURE_SPEECH_REGION"]
     if not region.isascii() or not region.isalnum():
         raise ValueError("The synthesis region is invalid.")

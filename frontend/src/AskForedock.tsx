@@ -82,7 +82,7 @@ export function AskForedock({ caseKey, onOpen, verified, availability }: {
         <div role="log" className="grid max-h-80 gap-3 overflow-y-auto">
           {entries.map(({ question, reply }) => <div key={reply.answer_id} className="grid gap-2">
             <p className="justify-self-end rounded-2xl rounded-br-md bg-accent-soft px-3 py-2">{question}</p>
-            <p className="whitespace-pre-wrap">{reply.answer}</p>
+            <p className="whitespace-pre-wrap">{reply.answer.split(/([*][*][^*]+[*][*])/).map((part, i) => part.startsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong> : part.replaceAll("`", ""))}</p>
             {availability.transcribe && <button type="button" className="justify-self-start text-sm text-accent-ink"
               disabled={voice.stage !== "idle" || busy}
               onClick={() => void voice.play(reply, reply.language ?? language, availability.speak)}>Play answer</button>}

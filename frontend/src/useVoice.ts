@@ -185,7 +185,7 @@ export function useVoice(onError: (error: string) => void) {
     current.current = session;
     setStage("playing");
     try {
-      if (useAzure && language && reply.answer.length <= 1500) {
+      if (useAzure && reply.answer.length <= 1500) {
         try {
           const blob = await speakAnswer(reply, language, session.request.signal);
           if (session.request.signal.aborted) return;
