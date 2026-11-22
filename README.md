@@ -59,7 +59,10 @@ All settings live in `.env` in the repository root. Never commit it.
 | `OPENAI_AGENT_MODEL` | no | Model for decisions and reading replies (default `gpt-5.4`) |
 | `AGENTS` | no | `on` runs the agents here. Exactly one running copy may have this on |
 | `AUTO_SEND` | no | `inquiries` (default) lets agents send questions; `off` sends nothing without a person |
-| `DAILY_BUDGET_USD` | no | Model spend per day after which the agents pause (default 25) |
+| `DAILY_BUDGET_USD` | no | Model spend per day after which the agents pause (default 5) |
+| `HOURLY_BUDGET_USD` | no | Model spend per hour after which cases wait for the next hour (default 1) |
+| `VOICE_PILOT` | no | `on` enables asking by voice and spoken answers in Ask Foredock. Needs personal keys in `APP_USERS` and `AUTO_SEND=off` |
+| `AZURE_SPEECH_REGION`, `AZURE_SPEECH_KEY`, `AZURE_SPEECH_USD_PER_MILLION_CHARS` | no | Azure voices for spoken answers. Without them the OpenAI speech model reads the answers |
 | `MAIL_ADDRESS`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` | for email | The agents' mailbox, see below |
 | `APP_ACCESS_KEY` | when deployed | Shared passphrase for the desk. A public deployment without it serves no data |
 | `APP_USERS` | no | Personal keys with role and approval limit, see below |
@@ -84,6 +87,12 @@ APP_USERS=[{"name": "Paul Winter", "key": "a-long-secret", "role": "approver", "
 ```
 
 Roles are `viewer` (reads), `approver` (approves up to the limit) and `admin` (no limit). With personal keys set, the shared key only lets its holder look.
+
+Opening the desk as `http://127.0.0.1:8000/?key=<your key>` signs you in and removes the key from the address.
+
+### Ask Foredock
+
+The button in the top bar opens an assistant that answers questions about the launch from the desk's data, in English, German, Chinese, Polish or Korean. It can read but cannot send, approve or change anything. It needs a key to be set (`APP_ACCESS_KEY` or `APP_USERS`). With `VOICE_PILOT=on` it also takes questions by microphone and reads its answers aloud; the microphone only works on `localhost` or over HTTPS.
 
 ## What the agents may do
 
@@ -115,12 +124,13 @@ npm run dev      # http://localhost:5173, talks to the backend on port 8000
 npm run build    # writes the bundle to backend/app/static, which is committed
 ```
 
-The interface uses a warm pastel theme with a dark variant (system setting or the toggle in the top bar). The
-Today page opens on a small 3D model of the Hamburg dock, built in code with `three` 0.187.0 and
-`@react-three/fiber` 9.8.2 and driven by the forecast: a line that will stop glows and halts, missing copies stand at
-the dock as ghost boxes, and three views compare the ERP, the evidence and the outcome if the open actions land. The
-3D code is a separate chunk loaded after the data. With reduced motion switched on, or without WebGL, the same figures
-are shown as bars instead.
+The interface is white with crimson as its one accent, and has a dark variant (system setting or the toggle in the
+top bar). The Today page opens on a small 3D model of the Hamburg dock, built in code with `three` 0.187.0 and
+`@react-three/fiber` 9.8.2 and driven by the forecast: a line that will stop halts, missing copies stand at the dock
+as ghost boxes, and the views compare the ERP, the evidence and the outcome if the open actions land. Ticking a fix
+under "What if" reruns the forecast with that part solved; it only simulates. The Parts page has a 3D shelf with one
+column per part. The 3D code is a separate chunk loaded after the data. With reduced motion switched on, or without
+WebGL, the same figures are shown flat instead.
 
 ## Where things are
 
@@ -137,8 +147,15 @@ backend/app/
   mail.py        the mailbox
   pipeline.py    one pass of the whole loop
   durable.py     state that survives a restart
+  assistant.py   Ask Foredock: the read-only question assistant
+  voice.py       speech to text and spoken answers for the assistant
+  views.py       what the desk shows, including the what-if forecast
   main.py        the API and the desk
 frontend/src/    the desk (React)
+  DockScene.tsx  the 3D dock on Today       PartsScene.tsx  the 3D shelf on Parts
+  Today.tsx, Pages.tsx, CasePanel.tsx, AskForedock.tsx      the pages, the case drawer, the assistant
+  Viz.tsx        the charts                 index.css       colours and fonts
+pitch/           the script that builds the pitch deck
 ```
 
 ## Cost
