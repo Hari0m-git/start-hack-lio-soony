@@ -122,7 +122,7 @@ def activity(conn: sqlite3.Connection, facts: Facts, limit: int = 40) -> list[di
                           "WHERE baseline = 0 GROUP BY run_id"):
         files = [p.rsplit("/", 1)[-1] for p in r["paths"].split("|")]
         items.append({"at": r["ts"], "kind": "files", "case_key": None,
-                      "text": f"{r['n']} new or changed file{'s' if r['n'] > 1 else ''} arrived and {'were' if r['n'] > 1 else 'was'} read",
+                      "text": f"{r['n']} new or changed file{'s' if r['n'] > 1 else ''} arrived",
                       "detail": ", ".join(files[:6]) + ("…" if len(files) > 6 else "")})
     for m in conn.execute("SELECT * FROM messages WHERE status IN ('sent', 'received')"):
         if m["status"] == "received":
@@ -132,7 +132,8 @@ def activity(conn: sqlite3.Connection, facts: Facts, limit: int = 40) -> list[di
                           "text": f"{m['counterpart_name']} {said} {name(m['case_key'])}", "detail": reading.get("summary")})
         else:
             who = ("The agent asked" if m["sent_by"] == "agent" else "Something other than the agents wrote to"
-                   if m["sent_by"] == "other" else "You approved a message to")
+                   if m["sent_by"] == "other" else "A person approved a message to"
+                   if m["sent_by"] == "human" else "An older desk message (approver not recorded) went to")
             items.append({"at": m["sent_at"], "kind": {"agent": "sent_by_agent", "other": "foreign"}.get(m["sent_by"], "sent_by_human"),
                           "case_key": m["case_key"], "text": f"{who} {m['counterpart_name']} about {name(m['case_key'])}",
                           "detail": m["subject"]})

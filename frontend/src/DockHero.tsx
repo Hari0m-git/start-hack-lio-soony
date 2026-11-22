@@ -1,7 +1,7 @@
 import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Forecast, Overview } from "./api";
 import type { DockLine } from "./DockScene";
-import { num, when } from "./format";
+import { forecastTime, num, when } from "./format";
 import { Card, Label, useCountUp } from "./ui";
 
 // The 3D code is fetched only after the data is on screen.
@@ -9,9 +9,9 @@ const DockScene = lazy(() => import("./DockScene"));
 
 type View = "erp" | "evidence" | "acted" | "picks";
 const VIEWS: { id: View; label: string; title: string; note: string }[] = [
-  { id: "erp", label: "System view", title: "What the system says", note: "Stock and deliveries exactly as Soony's ERP shows them." },
-  { id: "evidence", label: "Evidence view", title: "What the paperwork supports", note: "Only what delivery notes, inspections and supplier mails support." },
-  { id: "acted", label: "If we act", title: "If the open actions land", note: "Also counts goods that only arrive if somebody acts, such as the container at the port." },
+  { id: "erp", label: "System view", title: "What the stock system says", note: "Uses stock and deliveries as recorded in the ERP (the stock system)." },
+  { id: "evidence", label: "Evidence view", title: "What the paperwork supports", note: "Uses delivery notes, inspections and supplier replies to check what can actually be used." },
+  { id: "acted", label: "If we act", title: "If action-dependent shipments arrive", note: "Assumes shipments such as the one at the port are collected and arrive as modeled. It does not mean collection is booked." },
 ];
 const PICKS = { id: "picks" as View, label: "Your picks", title: "With the fixes you ticked", note: "Assumes the parts you ticked below are no longer short. Ticking only simulates." };
 
@@ -89,15 +89,14 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
     <Card className="overflow-hidden">
       <div className="dusk flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
         <div>
-          <Label>The Hamburg dock · trucks leave {when(f.deadline)}</Label>
+          <Label>Compare launch scenarios</Label>
           <div className="mt-0.5 font-display text-lg font-semibold">{meta.title}</div>
         </div>
-        <div role="radiogroup" aria-label="Which forecast to show" className="flex max-w-full rounded-full border border-line bg-card p-1 text-sm">
+        <div role="group" aria-label="Compare forecast scenarios" className="flex max-w-full flex-wrap rounded-2xl border border-line bg-card p-1 text-sm">
           {views.map((v) => (
             <button
               key={v.id}
-              role="radio"
-              aria-checked={view === v.id}
+              aria-pressed={view === v.id}
               onClick={() => setView(v.id)}
               className={`whitespace-nowrap rounded-full px-2.5 py-1.5 font-medium transition-colors sm:px-3 duration-200 ${view === v.id ? "bg-accent-600 text-white" : "text-muted hover:bg-accent-soft hover:text-ink"}`}
             >
@@ -117,7 +116,7 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
             </Quiet>
             {perGhost > 0 && (
               <div className="pointer-events-none absolute bottom-2 left-3 flex items-center gap-1.5 text-[11px] text-muted">
-                <span className="inline-block h-2.5 w-2.5 rounded-[3px] bg-bad/45 ring-1 ring-bad/50" /> one ghost box = {num(perGhost)} copies that miss the trucks
+                <span className="inline-block h-2.5 w-2.5 rounded-[3px] bg-bad/45 ring-1 ring-bad/50" /> Each translucent box represents about {num(perGhost)} missing copies
               </div>
             )}
           </div>
@@ -138,7 +137,7 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
                 <div className="flex items-baseline justify-between gap-3 text-sm">
                   <span className="font-semibold">{editionName(p.name, p.product_id)}</span>
                   <span className="text-muted">
-                    {num(p.packed + p.packed_by_deadline)} of {num(p.day_one_demand)} by {when(f.deadline)}
+                    {num(p.packed + p.packed_by_deadline)} of {num(p.day_one_demand)} by deadline
                   </span>
                 </div>
                 <div className="mt-1.5 flex h-3 overflow-hidden rounded-full bg-line" role="img" aria-label={`${num(p.packed)} packed, ${num(p.packed_by_deadline)} still feasible, ${num(p.short)} short`}>
@@ -152,10 +151,12 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
                       <path d="M12 8v5M12 16.5v.5M10.3 4.2L2.8 17.5A2 2 0 004.5 20.5h15a2 2 0 001.7-3L13.7 4.2a2 2 0 00-3.4 0z" />
                     </svg>
                     <span>
-                      <span className="font-semibold">First stops {when(p.first_stop.at)}</span> for {partName.get(p.first_stop.material_id) ?? p.first_stop.material_id}
+                      <span className="font-semibold">First modeled stall {forecastTime(p.first_stop.at)}</span> for {partName.get(p.first_stop.material_id) ?? p.first_stop.material_id}
                       <span className="block font-display text-base font-semibold">{num(p.short)} short by the deadline</span>
                     </span>
                   </div>
+                ) : p.short > 0 ? (
+                  <div className="mt-2 text-sm font-semibold text-bad-ink">{num(p.short)} short by the deadline</div>
                 ) : (
                   <div className="mt-2 rounded-lg bg-band px-3 py-2 text-sm font-semibold text-ink ring-1 ring-line">
                     {p.finished_at ? `Finishes ${when(p.finished_at)}, in time` : "Packed in time"}
@@ -165,9 +166,14 @@ export function DockHero({ data, picks }: { data: Overview; picks: Forecast | nu
             );
           })}
 
-          <p className="mt-auto text-xs text-muted">
-            {meta.note} <span className="whitespace-nowrap">Dark: packed · coral: still feasible · hatched: short.</span>
-          </p>
+          <div className="mt-auto space-y-2 text-xs text-muted">
+            <p>{meta.note}</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <span><i className="mr-1.5 inline-block h-2 w-2 rounded-sm bg-good" />Already packed</span>
+              <span><i className="mr-1.5 inline-block h-2 w-2 rounded-sm bg-coral" />Expected to pack</span>
+              <span><i className="hatch mr-1.5 inline-block h-2 w-2 rounded-sm" />Short</span>
+            </div>
+          </div>
         </div>
       </div>
     </Card>

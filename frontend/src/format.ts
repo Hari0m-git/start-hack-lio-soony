@@ -16,12 +16,27 @@ export function when(iso: string | null | undefined): string {
   return iso!.includes("T") ? `${day} ${time}` : `${day} ${p.d}.${p.mo}.`;
 }
 
+/** Forecast timestamps are Berlin wall-clock values without an offset; include the date for stale snapshots. */
+const fullForecastTime = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
+export function forecastTime(iso: string | null | undefined): string {
+  const p = iso ? parts(iso) : null;
+  return p && iso?.includes("T") ? fullForecastTime.format(p.utc) : when(iso);
+}
+
 /** Timestamps the backend stores in UTC (with an offset), shown in Berlin time. */
 export function clock(isoWithOffset: string | null | undefined): string {
   if (!isoWithOffset) return "";
   const d = new Date(isoWithOffset);
   if (Number.isNaN(d.getTime())) return isoWithOffset;
   return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
+}
+
+/** Recent events can span several days; include the Berlin date instead of showing only a time. */
+export function dateClock(isoWithOffset: string | null | undefined): string {
+  if (!isoWithOffset) return "";
+  const d = new Date(isoWithOffset);
+  if (Number.isNaN(d.getTime())) return isoWithOffset;
+  return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
 }
 
 export function hoursBetween(fromIso: string, toIso: string): number {

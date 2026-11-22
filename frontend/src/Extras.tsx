@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { fileUrl, type Finding, type Overview } from "./api";
-import { clock, fileName, num } from "./format";
+import { dateClock, fileName, num } from "./format";
 import { Chip, Label } from "./ui";
 
 const isImage = (path: string) => /\.(png|jpe?g|webp)$/i.test(path);
@@ -73,7 +73,7 @@ export function AgentLoop({ data }: { data: Overview }) {
   const steps: [string, string, string][] = [
     ["Watch", num(count("drops")), "new or changed files"],
     ["Read", num(count("files_read")), "files read"],
-    ["Reconcile", num(data.agent_work.findings), "findings open"],
+    ["Reconcile", num(data.agent_work.findings), "findings to review"],
     ["Forecast", num(short), "copies short"],
     ["Decide", num(count("cases_worked")), "cases worked"],
     ["Act", num(count("sent_automatically")), "questions sent"],
@@ -98,8 +98,8 @@ export function AgentLoop({ data }: { data: Overview }) {
         ))}
       </ol>
       <p className="mt-4 text-xs text-muted">
-        {data.loop.running ? "A pass is running now." : last ? `Figures from the last pass at ${clock(last.at)}.` : "No pass has run yet."}{" "}
-        {data.loop.agents_on ? "A pass runs every two minutes." : "The agents are switched off on this copy of the desk."}
+        {data.loop.running ? "A pass is running now." : last ? `Pass counts from ${dateClock(last.at)}; findings and forecast are current.` : "No pass has run on this copy; findings and forecast use stored data."}{" "}
+        {data.loop.agents_on ? "Passes run at regular intervals." : "The agents are switched off on this copy of the desk."}
       </p>
     </div>
   );

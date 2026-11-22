@@ -2,7 +2,7 @@ import { AskForedock } from "./AskForedock";
 import { useCallback, useEffect, useState } from "react";
 import { accessKey, getOverview, setAccessKey, Unauthorized, type Overview } from "./api";
 import { CasePanel } from "./CasePanel";
-import { countdown, hoursBetween, when } from "./format";
+import { countdown, forecastTime, hoursBetween } from "./format";
 import { Activity, Agents, Parts } from "./Pages";
 import { Today } from "./Today";
 import { Button, Card } from "./ui";
@@ -115,9 +115,17 @@ export default function App() {
     const asked = new URLSearchParams(location.search).get("page") as Page | null;
     return PAGES.some((p) => p.id === asked) ? asked! : "today";
   });
-  const [open, setOpenState] = useState<string | null>(() => decodeURIComponent(location.hash.slice(1)) || null);
-  const address = (p: Page, key: string | null) =>
-    history.replaceState(null, "", `${location.pathname}${p === "today" ? "" : `?page=${p}`}${key ? `#${encodeURIComponent(key)}` : ""}`);
+  const [open, setOpenState] = useState<string | null>(() => {
+    try { return decodeURIComponent(location.hash.slice(1)) || null; }
+    catch { return null; }
+  });
+  const address = (p: Page, key: string | null) => {
+    const url = new URL(location.href);
+    if (p === "today") url.searchParams.delete("page");
+    else url.searchParams.set("page", p);
+    url.hash = key ? encodeURIComponent(key) : "";
+    history.replaceState(null, "", url);
+  };
   const setPage = (p: Page) => {
     setPageState(p);
     address(p, open);
@@ -127,7 +135,6 @@ export default function App() {
     setOpenState(key);
     address(page, key);
   };
-  const [tick, setTick] = useState(0);
   const [ask, setAsk] = useState(false);
 
   const load = useCallback(async () => {
@@ -144,11 +151,7 @@ export default function App() {
   useEffect(() => {
     load();
     const refresh = setInterval(load, REFRESH_MS);
-    const clock = setInterval(() => setTick((t) => t + 1), 30_000);
-    return () => {
-      clearInterval(refresh);
-      clearInterval(clock);
-    };
+    return () => clearInterval(refresh);
   }, [load]);
 
   if (locked) return <Gate onDone={load} refused={!!accessKey()} />;
@@ -168,7 +171,7 @@ export default function App() {
       </div>
     );
 
-  const hoursLeft = hoursBetween(data.now, f.deadline) - (tick * 0.5) / 60;
+  const hoursLeft = hoursBetween(data.now, f.deadline);
   const waiting = data.cases.filter((c) => c.state === "needs_approval" || c.state === "needs_human").length;
   const opened = data.cases.find((c) => c.key === open);
   const loop = data.loop.running ? "Agents working" : data.loop.agents_on ? "Agents on" : "Agents off";
@@ -197,17 +200,14 @@ export default function App() {
           </nav>
           <div className="flex items-center gap-2 text-xs">
             <div className="mr-1 text-right leading-tight">
-              <div className="text-[11px] text-muted">Trucks leave {when(f.deadline)}</div>
-              <div className="font-display text-lg font-semibold text-accent-ink" aria-label={`${countdown(hoursLeft)} until the trucks leave`}>
-                {countdown(hoursLeft)}
+              <div className="text-[11px] text-muted">Truck deadline: {forecastTime(f.deadline)}</div>
+              <div className="font-display text-base font-semibold text-accent-ink">
+                {hoursLeft > 0 ? `${countdown(hoursLeft)} left` : "Deadline passed"}
               </div>
             </div>
-            <span className="hidden items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 xl:flex" title={`Figures as of ${when(f.as_of)}`}>
+            <span className="hidden items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 xl:flex">
               <span className={`h-2 w-2 rounded-full ${data.loop.running ? "node-live bg-accent" : data.loop.agents_on ? "bg-good" : "bg-muted"}`} />
               {loop}
-            </span>
-            <span className="hidden rounded-full border border-line bg-card px-3 py-1.5 xl:inline" title="Model spend today against the daily limit">
-              ${data.spend.today_usd.toFixed(2)} / ${data.spend.budget_usd.toFixed(2)}
             </span>
             <span className="hidden max-w-36 truncate rounded-full border border-line bg-card px-3 py-1.5 font-medium 2xl:inline">
               {data.me.name ?? "Shared access"}
@@ -226,6 +226,7 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-[1480px] px-4 pb-24 pt-6 sm:px-6 xl:px-10">
+        {error && <p role="alert" className="mb-4 rounded-xl border border-warn/40 bg-warn-soft p-3 text-sm text-warn-ink">Couldn’t refresh. Showing the last loaded figures. <button onClick={load} className="font-semibold underline">Try again</button></p>}
         {page === "today" && <Today data={data} onOpen={setOpen} />}
         {page === "parts" && <Parts data={data} onOpen={setOpen} />}
         {page === "activity" && <Activity data={data} onOpen={setOpen} />}
@@ -248,8 +249,7 @@ export default function App() {
             <section className="glass rounded-2xl border border-line p-4 text-sm">
               <div className="font-semibold">Ask Foredock</div>
               <p className="mt-2 text-muted">
-                The assistant only answers signed-in users. Set <code>APP_ACCESS_KEY</code> (or personal keys in <code>APP_USERS</code>) on
-                the server and open the desk with that key. Voice also needs <code>VOICE_PILOT=on</code>.
+                The assistant is unavailable on this copy. Open the signed-in desk to ask questions.
               </p>
             </section>
           )}
@@ -265,15 +265,14 @@ export default function App() {
       >
         <Mic /> {ask ? "Close" : "Ask Foredock"}
       </button>
-      {error && (
-        <div role="alert" className="fixed bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-xl bg-ink px-4 py-2 text-sm text-paper">
-          {error}
-        </div>
-      )}
       {opened && (
         <CasePanel
+          key={opened.key}
           item={opened}
           findings={data.findings.filter((x) => x.material_id === opened.material_id)}
+          canEdit={data.me.role !== "viewer"}
+          canSend={data.loop.agents_on && !!data.mail_address}
+          hasNamedUser={!!data.me.name}
           onClose={() => setOpen(null)}
           onChanged={load}
         />

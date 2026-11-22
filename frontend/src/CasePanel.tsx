@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { editDraft, fileUrl, reworkCase, sendMessage, type Case, type Finding, type Message } from "./api";
-import { clock, fileName, money, num, when } from "./format";
+import { clock, dateClock, fileName, money, num, when } from "./format";
 import { FlipEvidence } from "./Extras";
 import { Button, Chip, Label, StateChip } from "./ui";
 
@@ -44,7 +44,9 @@ function EvidenceLinks({ paths }: { paths: string[] }) {
   );
 }
 
-function Draft({ message, onChanged }: { message: Message; onChanged: () => void }) {
+function Draft({ message, canEdit, canSend, hasNamedUser, onChanged }: {
+  message: Message; canEdit: boolean; canSend: boolean; hasNamedUser: boolean; onChanged: () => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [subject, setSubject] = useState(message.subject);
   const [body, setBody] = useState(message.body);
@@ -118,35 +120,42 @@ function Draft({ message, onChanged }: { message: Message; onChanged: () => void
           This message still has blanks in square brackets. Fill them in under "Edit wording" before it can be sent.
         </div>
       )}
-      {error && <div className="mt-3 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad-ink">{error}</div>}
+      {error && <div role="alert" className="mt-3 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad-ink">{error}</div>}
+      {canEdit && !canSend && <p className="mt-3 text-sm text-muted">Sending is unavailable on this desk.</p>}
+      {canEdit && (
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {editing ? (
           <>
             <Button disabled={!!busy} onClick={() => run("save", () => editDraft(message.id, subject, body))}>
               {busy === "save" ? "Saving…" : "Save wording"}
             </Button>
-            <Button kind="quiet" disabled={!!busy} onClick={() => setEditing(false)}>
+            <Button kind="quiet" disabled={!!busy} onClick={() => {
+              setSubject(message.subject);
+              setBody(message.body);
+              setEditing(false);
+            }}>
               Cancel
             </Button>
           </>
         ) : (
           <>
-            <input
+            {canSend && !hasNamedUser && <input
               className="w-40 rounded-lg border border-line px-3 py-2 text-sm"
               placeholder="Your name"
-              title="Recorded with the approval"
+              aria-label="Name to record with approval"
               value={approver}
               onChange={(e) => (localStorage.setItem("foredock.approver", e.target.value), setApprover(e.target.value))}
-            />
-            <Button disabled={!!busy || !approver.trim() || blanks} onClick={() => run("send", () => sendMessage(message.id, approver.trim()))}>
+            />}
+            {canSend && <Button disabled={!!busy || (!hasNamedUser && !approver.trim()) || blanks} onClick={() => run("send", () => sendMessage(message.id, hasNamedUser ? "" : approver.trim()))}>
               {busy === "send" ? "Sending…" : `Approve and send to ${message.counterpart_name ?? "supplier"}`}
-            </Button>
+            </Button>}
             <Button kind="quiet" disabled={!!busy} onClick={() => setEditing(true)}>
               Edit wording
             </Button>
           </>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -196,20 +205,28 @@ function Mail({ message }: { message: Message }) {
 export function CasePanel({
   item,
   findings,
+  canEdit,
+  canSend,
+  hasNamedUser,
   onClose,
   onChanged,
 }: {
   item: Case;
   findings: Finding[];
+  canEdit: boolean;
+  canSend: boolean;
+  hasNamedUser: boolean;
   onClose: () => void;
   onChanged: () => void;
 }) {
   const [reworking, setReworking] = useState(false);
+  const [reworkError, setReworkError] = useState("");
+  const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    const panel = dialog.current;
+    panel?.showModal();
+    return () => panel?.close();
+  }, []);
 
   const drafts = item.messages.filter((m) => m.status === "draft");
   const internal = item.messages.filter((m) => m.status === "internal");
@@ -220,23 +237,32 @@ export function CasePanel({
 
   const rework = async () => {
     setReworking(true);
+    setReworkError("");
     try {
       await reworkCase(item.material_id);
       onChanged();
+    } catch (error) {
+      setReworkError(error instanceof Error ? error.message : "Couldn’t run the case again.");
     } finally {
       setReworking(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-20 flex justify-end bg-black/40" onClick={onClose}>
-      <aside className="h-full w-full max-w-2xl overflow-y-auto bg-paper shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <dialog
+      ref={dialog}
+      aria-labelledby="case-heading"
+      className="fixed inset-y-0 right-0 left-auto m-0 h-dvh max-h-none w-full max-w-2xl overflow-y-auto bg-paper text-ink shadow-2xl backdrop:bg-black/40"
+      onCancel={(e) => { e.preventDefault(); onClose(); }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="min-h-full">
         <header className="sticky top-0 z-10 flex items-start justify-between gap-4 glass border-b border-line px-4 py-4 sm:px-6">
           <div>
             <div className="text-xs text-muted">
               {item.description} · {item.material_id}
             </div>
-            <h2 className="text-lg font-semibold leading-tight">{item.card?.headline ?? item.description ?? item.material_id}</h2>
+            <h2 id="case-heading" className="text-lg font-semibold leading-tight">{item.card?.headline ?? item.description ?? item.material_id}</h2>
             <div className="mt-1.5">
               <StateChip state={item.state} />
             </div>
@@ -265,21 +291,25 @@ export function CasePanel({
               <div className="mt-1 text-[17px] font-semibold leading-snug">{item.card?.suggestion ?? rec.title}</div>
               <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
                 <div>
-                  <div className="text-white/60">Saves</div>
-                  <div className="text-base font-semibold">{num(rec.copies_saved)} copies</div>
+                  <div className="text-white/80">Copies recovered if fully fixed</div>
+                  <div className="text-base font-semibold">Up to {num(item.saves_alone)}</div>
                 </div>
                 <div>
-                  <div className="text-white/60">Costs</div>
+                  <div className="text-white/80">Estimated cost</div>
                   <div className="text-base font-semibold">{money(rec.cost, rec.currency)}</div>
                 </div>
                 <div>
-                  <div className="text-white/60">On the dock</div>
+                  <div className="text-white/80">Expected arrival</div>
                   <div className="text-base font-semibold">{rec.arrives_by ? when(rec.arrives_by) : "to be confirmed"}</div>
                 </div>
               </div>
-              {item.approval && (
+              <p className="mt-3 text-xs text-white/80">
+                This assumes the whole shortage for this part is fixed in time. The proposed action may recover fewer copies.
+                {rec.copies_saved > item.saves_alone && ` The agent’s estimate (${num(rec.copies_saved)}) exceeds the forecast; review before approving.`}
+              </p>
+              {item.approval && item.approval.required_role !== "No approval required" && (
                 <p className="mt-4 border-t border-white/20 pt-3 text-sm text-white/85">
-                  Signs: <span className="font-medium text-white">{item.approval.person ?? item.approval.required_role}</span>
+                  Proposed approver: <span className="font-medium text-white">{item.approval.person ?? item.approval.required_role}</span>
                 </p>
               )}
             </div>
@@ -292,9 +322,7 @@ export function CasePanel({
                 ? (item.card?.your_step ?? "Review the message below and approve it.")
                 : item.state === "waiting_for_supplier"
                   ? "Nothing right now. The agent is waiting for the supplier's answer and will bring it to you."
-                  : item.state === "supplier_answered"
-                    ? "Nothing right now. The supplier has answered and the agent is working out the next step."
-                    : (item.card?.your_step ?? "Nothing right now.")}
+                  : (item.card?.your_step ?? (item.state === "supplier_answered" ? "The supplier replied. Review the conversation below." : "No step recorded."))}
             </div>
           )}
 
@@ -308,16 +336,17 @@ export function CasePanel({
           )}
 
           {drafts.map((m) => (
-            <Draft key={m.id} message={m} onChanged={onChanged} />
+            <Draft key={m.id} message={m} canEdit={canEdit} canSend={canSend} hasNamedUser={hasNamedUser} onChanged={onChanged} />
           ))}
 
           {mail.length > 0 && (
-            <div className="space-y-2">
-              <Label>Conversation with the supplier</Label>
+            <More title={`Supplier conversation (${mail.length} messages)`}>
+              <div className="space-y-2">
               {mail.map((m) => (
                 <Mail key={m.id} message={m} />
               ))}
-            </div>
+              </div>
+            </More>
           )}
 
           <div className="space-y-2">
@@ -366,7 +395,7 @@ export function CasePanel({
                   <div key={o.title} className="mb-2 rounded-lg border border-line bg-paper p-3">
                     <div className="font-medium">{o.title}</div>
                     <div className="text-muted">
-                      Saves {num(o.copies_saved)} · {money(o.cost, o.currency)}
+                      Agent estimate: {num(o.copies_saved)} copies · {money(o.cost, o.currency)}
                     </div>
                     <div className="mt-1">{o.description}</div>
                   </div>
@@ -379,7 +408,8 @@ export function CasePanel({
               </More>
             )}
 
-            <More title={`How the agent worked (${item.trace.length} steps)`}>
+            <More title={`Technical details (${item.trace.length} agent steps)`}>
+              <p className="mb-3 text-muted">Last updated {dateClock(item.updated_at)} · ${item.cost_usd.toFixed(2)} in model costs for this case.</p>
               <ol className="space-y-1 text-muted">
                 {item.trace.map((t, i) => {
                   const args = Object.values(t.args ?? {}).flat().join(", ");
@@ -391,20 +421,15 @@ export function CasePanel({
                   );
                 })}
               </ol>
+              {canEdit && <div className="mt-3">
+                <Button kind="quiet" onClick={rework} disabled={reworking}>{reworking ? "Rechecking…" : "Recheck with the agent"}</Button>
+                {reworkError && <p role="alert" className="mt-2 text-bad-ink">{reworkError}</p>}
+              </div>}
             </More>
           </div>
 
-          <div className="flex items-center justify-between border-t border-line pt-4">
-            <span className="text-xs text-muted">
-              Worked at {clock(item.updated_at)} · ${item.cost_usd.toFixed(2)} of model time on this case so far. Reworked only when the
-              facts change.
-            </span>
-            <Button kind="quiet" onClick={rework} disabled={reworking}>
-              {reworking ? "Working… about a minute" : "Work this case again"}
-            </Button>
-          </div>
         </div>
-      </aside>
-    </div>
+      </div>
+    </dialog>
   );
 }

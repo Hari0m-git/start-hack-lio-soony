@@ -56,6 +56,19 @@ export function Label({ children }: { children: ReactNode }) {
   return <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">{children}</div>;
 }
 
+export function DetailCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Card>
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-5 py-3.5 font-medium hover:bg-accent-soft/50">
+          {title}<span aria-hidden="true" className="text-accent-ink transition-transform group-open:rotate-90">›</span>
+        </summary>
+        <div className="border-t border-line p-5">{children}</div>
+      </details>
+    </Card>
+  );
+}
+
 type Tone = "bad" | "warn" | "good" | "neutral";
 const TONES: Record<Tone, string> = {
   bad: "bg-accent-600 text-white font-semibold",

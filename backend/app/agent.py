@@ -33,6 +33,9 @@ asking for it your first action.
 - Look for every way the missing quantity could still be on the dock before the deadline: supplier offers and \
 notices, stock the supplier holds, open orders and shipments that could be expedited, a second source, a lot that \
 could be released. Give each option its cost, the copies it saves and when it arrives.
+- Search the documents for the part or supplier before submitting a decision. Read the matching statements and \
+their same-document context. When estimating dock arrival from a lead time, account for preparation, loading, \
+transport and internal release when the evidence specifies them. Say which legs are still unknown.
 - Check the approval policy and the organisation chart: who may approve this, and is that position filled? If the \
 policy names a role that is vacant, say who decides instead according to the policy.
 - List only options that can put parts on the dock in time; name what you ruled out in one line each under ruled_out. Recommend exactly one option and say why in terms of cost against copies saved.
@@ -73,8 +76,8 @@ TOOLS = [
      "language, price, lead time and minimum order quantity.",
      "parameters": {"type": "object", "required": ["material_id"], "properties": {"material_id": {"type": "string"}}}},
     {"name": "search_documents", "description": "Search what the documents say (offers, notices, contracts, "
-     "confirmations, memos, inspection reports). All keywords must occur. Returns statements with the original wording "
-     "and the file they come from.",
+     "confirmations, memos, inspection reports). All keywords must occur in a match. Also returns related statements "
+     "from matching files, which may contain separate terms for the same offer.",
      "parameters": {"type": "object", "required": ["keywords"], "properties": {
          "keywords": {"type": "array", "items": {"type": "string"}, "description": "e.g. a part id, a supplier name, 'rush'"},
          "supplier_id": {"type": "string"},
@@ -198,10 +201,13 @@ class Toolbox:
         }
 
     def search_documents(self, keywords: list[str], supplier_id: str | None = None, kinds: list[str] | None = None) -> dict:
-        words = [w.casefold() for w in keywords if w.strip()]
+        if not isinstance(keywords, list) or not all(isinstance(word, str) for word in keywords):
+            raise ValueError("keywords must be a list of strings")
+        words = [w.strip().casefold() for w in keywords if w.strip()]
+        facts = load(self.conn, "doc_fact")
         hits = []
         for entity in ("doc_fact", "doc_line", "doc_hold"):
-            for row in load(self.conn, entity):
+            for row in facts if entity == "doc_fact" else load(self.conn, entity):
                 text = json.dumps(row, ensure_ascii=False).casefold()
                 if not all(w in text for w in words):
                     continue
@@ -212,7 +218,32 @@ class Toolbox:
                 hits.append({"path": row["_source"], **{k: v for k, v in row.items()
                                                        if v not in (None, "", []) and not k.startswith("_") and not k.endswith("_text")}})
         hits.sort(key=lambda h: str(h.get("doc_date") or ""), reverse=True)
-        return {"count": len(hits), "results": hits[:25]}
+        result = {"count": len(hits), "results": [], "document_context": {}}
+
+        # Reserve some of the tool response for context without crowding out the direct matches.
+        for hit in hits[:25]:
+            result["results"].append(hit)
+            if len(json.dumps(result, ensure_ascii=False)) > MAX_RESULT_CHARS * 2 // 3:
+                result["results"].pop()
+        paths = {h["path"] for h in result["results"]}
+        matched = {(h["path"], h.get("statement"), h.get("quote")) for h in result["results"]}
+        context = result["document_context"]
+        for row in facts:
+            path, statement, quote = row["_source"], row.get("statement"), row.get("quote")
+            key = (path, statement, quote)
+            if path not in paths or key in matched or not (statement or quote):
+                continue
+            notes = context.setdefault(path, [])
+            if len(notes) >= 15:
+                continue
+            notes.append({k: row[k] for k in ("kind", "supplier_id", "subject", "statement", "quote") if row.get(k)})
+            if len(json.dumps(result, ensure_ascii=False)) > MAX_RESULT_CHARS:
+                notes.pop()
+                if not notes:
+                    del context[path]
+            else:
+                matched.add(key)
+        return result
 
     def policies(self) -> dict:
         rows = [f for f in load(self.conn, "doc_fact") if f.get("kind") in POLICY_KINDS
@@ -321,7 +352,9 @@ def to_english(texts: list[str]) -> list[str]:
 
 
 def run_case(conn: sqlite3.Connection, material_id: str, now: datetime | None = None) -> dict:
-    now = (now or datetime.now(LOCAL)).replace(tzinfo=None)
+    now = now or datetime.now(LOCAL)
+    if now.tzinfo is not None:
+        now = now.astimezone(LOCAL).replace(tzinfo=None)
     assessment = assess(conn, now.date())
     priority = priority_order(conn)
     box = Toolbox(conn, assessment, priority["order"])
@@ -337,6 +370,7 @@ def run_case(conn: sqlite3.Connection, material_id: str, now: datetime | None = 
                 {"role": "user", "content": f"Case: {json.dumps(brief, ensure_ascii=False)}"}]
     tools = [{"type": "function", "function": t} for t in TOOLS]
     trace, decision = [], None
+    searched = False
     for _ in range(MAX_STEPS):
         reply = llm.chat(messages, tools, purpose=f"case:{material_id}")
         messages.append(reply)
@@ -347,10 +381,16 @@ def run_case(conn: sqlite3.Connection, material_id: str, now: datetime | None = 
         for call in calls:
             name, args = call["function"]["name"], json.loads(call["function"]["arguments"] or "{}")
             if name == "submit_decision":
-                decision = args
-                result = {"received": True}
+                if searched:
+                    decision = args
+                    result = {"received": True}
+                else:
+                    result = {"received": False, "error": "Use search_documents with keywords for this part or its suppliers "
+                              "before submitting. Offers, notices and holds may only be found in those files."}
             else:
                 result = box.call(name, args)
+                if name == "search_documents" and "error" not in result:
+                    searched = searched or any(w.strip() for w in args["keywords"])
             trace.append({"tool": name, "args": args if name != "submit_decision" else {},
                           "result_chars": len(json.dumps(result, ensure_ascii=False, default=str))})
             messages.append({"role": "tool", "tool_call_id": call["id"],
@@ -358,6 +398,8 @@ def run_case(conn: sqlite3.Connection, material_id: str, now: datetime | None = 
         if decision:
             break
     if not decision:
+        if not searched:
+            raise RuntimeError("the case agent did not complete a targeted document search")
         raise RuntimeError(f"no decision after {MAX_STEPS} steps")
 
     known = {r["path"] for r in conn.execute("SELECT path FROM files WHERE removed_at IS NULL")}
