@@ -10,3 +10,5 @@ node_modules/
 *.db
 *.zip
 PHOENIX_Snapshot.html
+pitch/*.pptx
+pitch/img/
