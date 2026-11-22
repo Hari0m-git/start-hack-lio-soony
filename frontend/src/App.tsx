@@ -1,5 +1,6 @@
+import { AskForedock } from "./AskForedock";
 import { useCallback, useEffect, useState } from "react";
-import { getOverview, setAccessKey, Unauthorized, type Overview } from "./api";
+import { accessKey, getOverview, setAccessKey, Unauthorized, type Overview } from "./api";
 import { CasePanel } from "./CasePanel";
 import { countdown, hoursBetween, when } from "./format";
 import { Activity, Agents, Parts } from "./Pages";
@@ -143,6 +144,7 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-5xl px-5 pb-20 pt-7">
+        {accessKey() && <AskForedock key={accessKey()} caseKey={open} onOpen={setOpen} verified={data.me.verified} availability={data.voice} />}
         {page === "today" && <Today data={data} onOpen={setOpen} />}
         {page === "parts" && <Parts data={data} onOpen={setOpen} />}
         {page === "activity" && <Activity data={data} onOpen={setOpen} />}

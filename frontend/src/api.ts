@@ -143,6 +143,7 @@ export type Overview = {
   agent_work: { sent_by_agents: number; approved_by_people: number; replies: number; findings: number };
   loop: { last_tick: { at: string; errors: string[] } | null; running: boolean; agents_on: boolean };
   mail_address: string | null;
+  voice: VoiceAvailability;
 };
 
 const KEY = "foredock.key";
@@ -171,3 +172,42 @@ export const editDraft = (id: number, subject: string, body: string) =>
   call(`/api/messages/${id}`, { method: "PATCH", body: JSON.stringify({ subject, body }) });
 export const reworkCase = (materialId: string) => call(`/api/cases/${materialId}/rework`, { method: "POST" });
 export const fileUrl = (path: string) => `/api/file?path=${encodeURIComponent(path)}&key=${encodeURIComponent(accessKey())}`;
+
+export type ReplyLanguage = "en" | "de" | "zh" | "pl" | "ko";
+export type AssistantReply = {
+  conversation_id: string;
+  answer_id: string;
+  answer: string;
+  evidence: string[];
+  cases: string[];
+  language: ReplyLanguage | null;
+};
+
+export const askForedock = (input: {
+  message: string;
+  conversation_id: string | null;
+  case_key: string | null;
+  language: ReplyLanguage | null;
+}, signal: AbortSignal) => call<AssistantReply>("/api/assistant/turn", {
+  method: "POST", body: JSON.stringify(input), signal,
+});
+
+export type VoiceAvailability = { transcribe: boolean; speak: boolean };
+
+export const transcribeClip = (clip: Blob, language: ReplyLanguage | null, signal: AbortSignal) =>
+  call<{ text: string; language: ReplyLanguage | null }>(
+    `/api/voice/transcribe${language ? `?language=${language}` : ""}`,
+    { method: "POST", headers: { "Content-Type": "audio/wav" }, body: clip, signal },
+  );
+
+export async function speakAnswer(reply: AssistantReply, language: ReplyLanguage, signal: AbortSignal) {
+  const response = await fetch("/api/voice/speak", {
+    method: "POST", headers: { "Content-Type": "application/json", "X-Access-Key": accessKey() },
+    body: JSON.stringify({ conversation_id: reply.conversation_id, answer_id: reply.answer_id, language }), signal,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || "Playback is unavailable.");
+  }
+  return response.blob();
+}

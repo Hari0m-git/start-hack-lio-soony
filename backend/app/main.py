@@ -9,12 +9,13 @@ from datetime import datetime
 from pathlib import Path
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from app import durable, views
+from app import assistant, durable, llm, views, voice
 from app.agent import LOCAL, run_case
 from app.config import Settings, get_settings
 from app.db import audit, connect
@@ -164,7 +165,7 @@ def me(user: dict = Depends(guard)) -> dict:
 def overview(conn=Depends(db), user: dict = Depends(guard)) -> dict:
     mail_address = os.environ.get("MAIL_ADDRESS") if get_settings().mail_configured else None
     return {**views.overview(conn, datetime.now(LOCAL)), "loop": {**state, "agents_on": get_settings().agents_on}, "me": user,
-            "mail_address": mail_address}
+            "mail_address": mail_address, "voice": voice.capabilities(get_settings())}
 
 
 @app.patch("/api/messages/{message_id}", dependencies=[Depends(guard)])
@@ -227,6 +228,85 @@ def evidence_file(path: str) -> FileResponse:
     if not target.is_relative_to(root) or not target.is_file():
         raise HTTPException(404, "no such file")
     return FileResponse(target, filename=target.name, content_disposition_type="inline")
+
+
+def assistant_identity(
+    user: dict = Depends(guard), x_access_key: str | None = Header(None),
+) -> tuple[str, str]:
+    settings = get_settings()
+    if not x_access_key or not (settings.access_key or settings.users):
+        raise HTTPException(401, "Ask Foredock requires an access key in the request header.")
+    return x_access_key, user["name"] if user["verified"] else "shared key"
+
+
+@app.post("/api/assistant/turn")
+async def assistant_turn(request: Request, response: Response, identity=Depends(assistant_identity), conn=Depends(db)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    if not llm.keys():
+        raise HTTPException(503, "Ask Foredock needs an OpenAI key.")
+    try:
+        turn = assistant.Turn.model_validate_json(await _voice_request(request, 20_000))
+    except ValueError as exc:
+        raise HTTPException(422, "The assistant request is invalid.") from exc
+    try:
+        return await run_in_threadpool(assistant.ask, conn, turn, *identity)
+    except assistant.ConversationError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    except llm.BudgetExceeded as exc:
+        raise HTTPException(429, str(exc)) from exc
+    except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
+        raise HTTPException(502, "Ask Foredock could not reach or read its model response.") from exc
+
+
+async def _voice_request(request: Request, limit: int) -> bytes:
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > limit:
+            raise HTTPException(413, "Voice request is too large.")
+        body.extend(chunk)
+    return bytes(body)
+
+
+@app.post("/api/voice/transcribe")
+async def voice_transcribe(request: Request, language: assistant.Language | None = None,
+                           identity=Depends(assistant_identity), conn=Depends(db)) -> Response:
+    if not voice.capabilities(get_settings())["transcribe"]:
+        raise HTTPException(503, "Voice transcription is unavailable.")
+    if request.headers.get("content-type") != "audio/wav":
+        raise HTTPException(415, "Upload WAV audio.")
+    body = await _voice_request(request, voice.MAX_AUDIO_BYTES)
+    try:
+        answer = await run_in_threadpool(voice.transcribe, conn, body, language)
+    except llm.BudgetExceeded as exc:
+        raise HTTPException(429, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, "The recording could not be read.") from exc
+    except (httpx.HTTPError, KeyError) as exc:
+        raise HTTPException(502, "The transcription provider could not answer.") from exc
+    await run_in_threadpool(audit, conn, identity[1], "transcribed a voice clip")
+    return Response(json.dumps(answer, ensure_ascii=False), media_type="application/json",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/voice/speak")
+async def voice_speak(request: Request, identity=Depends(assistant_identity), conn=Depends(db)) -> Response:
+    if not voice.capabilities(get_settings())["speak"]:
+        raise HTTPException(503, "Voice playback is unavailable.")
+    body = await _voice_request(request, 20_000)
+    try:
+        speech = voice.Speak.model_validate_json(body)
+        text = assistant.answer_for(identity[0], speech.conversation_id, speech.answer_id)
+        audio = await run_in_threadpool(voice.speak, conn, text, speech.language)
+    except assistant.ConversationError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    except llm.BudgetExceeded as exc:
+        raise HTTPException(429, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, "The speech request is invalid.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "The synthesis provider could not answer.") from exc
+    await run_in_threadpool(audit, conn, identity[1], "generated spoken playback")
+    return Response(audio, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
 
 
 if STATIC.is_dir():

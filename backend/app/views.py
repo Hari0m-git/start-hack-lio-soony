@@ -151,7 +151,8 @@ def spend(conn: sqlite3.Connection, now: datetime) -> dict:
     """What the agents have cost today, by kind of work."""
     start = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
     kinds = {"reading files": "purpose IN ('record_document', 'map_columns')", "working cases": "purpose LIKE 'case:%'",
-             "reading replies": "purpose = 'reply'", "translations and checks": "purpose IN ('translate', 'guard', 'set_priority')"}
+             "assistant": "purpose = 'assistant'", "transcription": "purpose = 'voice:transcribe'",
+             "synthesis": "purpose = 'voice:speak'", "reading replies": "purpose = 'reply'", "translations and checks": "purpose IN ('translate', 'guard', 'set_priority')"}
     by_kind = {name: conn.execute(f"SELECT COALESCE(SUM(cost_usd), 0), COUNT(*) FROM llm_usage WHERE ts >= ? AND {where}",
                                   (start,)).fetchone() for name, where in kinds.items()}
     return {"today_usd": round(sum(v[0] for v in by_kind.values()), 2), "budget_usd": DAILY_BUDGET_USD,

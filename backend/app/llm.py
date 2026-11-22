@@ -100,3 +100,60 @@ def extract(messages: list[dict], name: str, description: str, schema: dict, mod
 def chat(messages: list[dict], tools: list[dict], model: str | None = None, purpose: str = "") -> dict:
     """One turn of a tool-using conversation; returns the assistant message."""
     return _post({"model": model or AGENT_MODEL, "messages": messages, "tools": tools}, purpose or "chat")
+
+
+class BudgetExceeded(RuntimeError):
+    pass
+
+
+def reserve_usage(conn, purpose: str, model: str, maximum: float, limit: float) -> int:
+    """Store a conservative in-flight charge before calling a provider."""
+    now = datetime.now(timezone.utc)
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        spent = conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM llm_usage WHERE ts >= ?", (start,)).fetchone()[0]
+        if spent + maximum > limit:
+            raise BudgetExceeded("The daily AI budget has insufficient funds for this request.")
+        row = conn.execute(
+            "INSERT INTO llm_usage (ts, purpose, model, input_tokens, cached_tokens, output_tokens, cost_usd) "
+            "VALUES (?, ?, ?, 0, 0, 0, ?)",
+            (now.isoformat(timespec="seconds"), purpose, model, maximum),
+        )
+        conn.commit()
+        return row.lastrowid
+    except BaseException:
+        conn.rollback()
+        raise
+
+
+def settle_usage(conn, row: int, cost: float, usage: dict | None = None) -> None:
+    usage = usage or {}
+    conn.execute(
+        "UPDATE llm_usage SET cost_usd = ?, input_tokens = ?, cached_tokens = ?, output_tokens = ? WHERE id = ?",
+        (cost, usage.get("prompt_tokens", 0), (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0),
+         usage.get("completion_tokens", 0), row),
+    )
+    conn.commit()
+
+
+def assistant_chat(conn, messages: list[dict], tools: list[dict]) -> dict:
+    from app.pipeline import DAILY_BUDGET_USD
+
+    model = DEFAULT_MODEL
+    payload = {"model": model, "messages": messages, "max_completion_tokens": 1400}
+    if tools:
+        payload["tools"] = tools
+    prices = next((price for name, price in sorted(PRICES.items(), key=lambda item: -len(item[0]))
+                   if model == name or model.startswith(name + "-20")), None)
+    if prices is None:
+        raise ValueError("Ask Foredock requires a priced OPENAI_MODEL.")
+    maximum = ((len(json.dumps(payload).encode()) + 512) * prices[0] + 1400 * prices[2]) / 1_000_000
+    row = reserve_usage(conn, "assistant", model, maximum, DAILY_BUDGET_USD)
+    result = client().post("/chat/completions", json=payload, headers={"Authorization": f"Bearer {keys()[_key]}"},
+                           timeout=25)
+    result.raise_for_status()
+    data = result.json()
+    if data.get("usage"):
+        settle_usage(conn, row, cost_usd(model, data["usage"]), data["usage"])
+    return data["choices"][0]["message"]

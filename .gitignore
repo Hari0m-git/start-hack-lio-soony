@@ -8,3 +8,5 @@ __pycache__/
 node_modules/
 *.sqlite
 *.db
+*.zip
+PHOENIX_Snapshot.html
